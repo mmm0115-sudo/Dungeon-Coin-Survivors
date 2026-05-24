@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#050510">
+  <title>Dungeon Coin Survivors</title>
+  <style>
+    /* =========================================================
+       Dungeon Coin Survivors
+       - 1ファイル完結のGitHub Pages向けブラウザゲーム
+       - 外部ライブラリ不使用 / Canvas 2D / localStorage保存
+       ========================================================= */
+    :root {
+      --bg: #050510;
+      --panel: rgba(11, 14, 32, 0.92);
+      --panel2: rgba(18, 24, 48, 0.92);
+      --line: rgba(120, 245, 255, 0.38);
+      --cyan: #54f7ff;
+      --pink: #ff4fd8;
+      --lime: #9dff58;
+      --gold: #ffd84d;
+      --red: #ff4d69;
+      --text: #eef8ff;
+      --muted: #9eb6d9;
+      --shadow: 0 0 22px rgba(84, 247, 255, 0.24);
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255, 79, 216, 0.14), transparent 30%),
+        radial-gradient(circle at 82% 22%, rgba(84, 247, 255, 0.13), transparent 28%),
+        linear-gradient(180deg, #050510, #070714 56%, #030307);
+    }
+
+    button, input {
+      font: inherit;
+      color: inherit;
+    }
+
+    button {
+      min-height: 46px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px 15px;
+      background: linear-gradient(180deg, rgba(20, 34, 70, 0.96), rgba(11, 14, 32, 0.96));
+      color: var(--text);
+      box-shadow: inset 0 0 14px rgba(84, 247, 255, 0.09), 0 0 0 rgba(0,0,0,0);
+      cursor: pointer;
+      transition: transform 0.08s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.99);
+    }
+
+    button:hover, button:focus-visible {
+      border-color: rgba(84, 247, 255, 0.88);
+      box-shadow: var(--shadow);
+      outline: none;
+    }
+
+    .danger { border-color: rgba(255, 77, 105, 0.65); }
+    .primary { border-color: rgba(255, 79, 216, 0.72); color: #fff; }
+    .disabled { opacity: 0.45; pointer-events: none; }
+
+    #app {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #050510;
+    }
+
+    .screen {
+      position: absolute;
+      inset: 0;
+      display: none;
+      padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
+      overflow: hidden;
+      z-index: 4;
+    }
+
+    .screen.active { display: flex; }
+
+    .menu {
+      width: min(980px, 100%);
+      max-height: 100%;
+      margin: auto;
+      display: grid;
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow), inset 0 0 40px rgba(255, 79, 216, 0.04);
+      padding: 16px;
+      overflow: hidden;
+    }
+
+    .title-card {
+      text-align: center;
+      padding: 22px 16px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+
+    h1 {
+      font-size: clamp(34px, 7vw, 74px);
+      line-height: 0.95;
+      letter-spacing: 0;
+      text-shadow: 0 0 18px rgba(84, 247, 255, 0.8), 0 0 32px rgba(255, 79, 216, 0.42);
+    }
+
+    h2 {
+      font-size: clamp(22px, 4vw, 34px);
+      color: var(--cyan);
+      text-shadow: 0 0 14px rgba(84, 247, 255, 0.55);
+    }
+
+    h3 { font-size: 17px; color: var(--gold); }
+
+    .sub {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .menu-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .menu-grid button {
+      min-height: 58px;
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .scroll {
+      overflow: auto;
+      min-height: 0;
+      padding-right: 4px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(120, 245, 255, 0.14);
+    }
+
+    .row:last-child { border-bottom: 0; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border-radius: 999px;
+      border: 1px solid rgba(120, 245, 255, 0.34);
+      background: rgba(84, 247, 255, 0.08);
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #hud {
+      position: absolute;
+      inset: calc(10px + var(--safe-top)) 10px auto 10px;
+      z-index: 3;
+      display: none;
+      pointer-events: none;
+      gap: 8px;
+      flex-direction: column;
+    }
+
+    #hud.active { display: flex; }
+
+    .hud-top {
+      display: grid;
+      grid-template-columns: 220px 1fr auto;
+      gap: 8px;
+      align-items: start;
+    }
+
+    .hud-box {
+      border: 1px solid rgba(120, 245, 255, 0.28);
+      border-radius: 8px;
+      background: rgba(4, 7, 18, 0.72);
+      padding: 8px;
+      box-shadow: 0 0 18px rgba(0,0,0,0.3);
+    }
+
+    .bar {
+      height: 16px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+    }
+
+    .bar > i {
+      display: block;
+      height: 100%;
+      width: 50%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--red), var(--gold));
+    }
+
+    .xp > i { background: linear-gradient(90deg, #4d8dff, var(--cyan)); }
+
+    .hud-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .skills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: center;
+    }
+
+    #touchLayer {
+      position: absolute;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+      display: none;
+    }
+
+    #touchLayer.active { display: block; }
+
+    .stick {
+      position: absolute;
+      left: max(18px, env(safe-area-inset-left, 0px));
+      bottom: calc(18px + var(--safe-bottom));
+      width: 154px;
+      height: 82px;
+      border-radius: 999px;
+      border: 2px solid rgba(84, 247, 255, 0.45);
+      background: rgba(84, 247, 255, 0.08);
+      pointer-events: auto;
+      touch-action: none;
+    }
+
+    .stick i {
+      position: absolute;
+      left: 55px;
+      top: 17px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: rgba(255, 79, 216, 0.8);
+      box-shadow: 0 0 20px rgba(255, 79, 216, 0.55);
+    }
+
+    .dash-touch {
+      position: absolute;
+      right: max(18px, env(safe-area-inset-right, 0px));
+      bottom: calc(32px + var(--safe-bottom));
+      width: 106px;
+      height: 106px;
+      border-radius: 50%;
+      padding: 0;
+      font-weight: 900;
+      pointer-events: auto;
+      touch-action: none;
+      border-color: rgba(255, 216, 77, 0.72);
+      background: radial-gradient(circle, rgba(255,216,77,0.2), rgba(20,34,70,0.95));
+    }
+
+    #levelUp, #result {
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.62);
+      z-index: 8;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .card {
+      min-height: 168px;
+      text-align: left;
+      padding: 14px;
+      border: 1px solid rgba(120, 245, 255, 0.36);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(21, 31, 64, 0.96), rgba(7, 10, 24, 0.96));
+      box-shadow: inset 0 0 20px rgba(84, 247, 255, 0.06);
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--gold);
+      font-size: 18px;
+    }
+
+    .toast {
+      position: absolute;
+      left: 50%;
+      top: 22%;
+      z-index: 9;
+      display: none;
+      transform: translateX(-50%);
+      width: min(620px, calc(100% - 28px));
+      padding: 18px 16px;
+      text-align: center;
+      border: 1px solid rgba(255, 216, 77, 0.8);
+      border-radius: 8px;
+      background: rgba(8, 8, 18, 0.94);
+      box-shadow: 0 0 28px rgba(255, 216, 77, 0.45), 0 0 56px rgba(255, 79, 216, 0.26);
+      font-size: clamp(20px, 5vw, 42px);
+      font-weight: 1000;
+      color: var(--gold);
+      text-shadow: 0 0 18px rgba(255,216,77,0.8);
+      pointer-events: none;
+    }
+
+    .toast.show {
+      display: block;
+      animation: pop 1.9s ease forwards;
+    }
+
+    @keyframes pop {
+      0% { transform: translateX(-50%) scale(0.82); opacity: 0; }
+      12% { transform: translateX(-50%) scale(1.04); opacity: 1; }
+      78% { transform: translateX(-50%) scale(1); opacity: 1; }
+      100% { transform: translateX(-50%) scale(0.94); opacity: 0; }
+    }
+
+    .rarity-Common { color: #d6e3f2; border-color: rgba(214, 227, 242, 0.35); }
+    .rarity-Rare { color: #54f7ff; border-color: rgba(84, 247, 255, 0.58); }
+    .rarity-Epic { color: #c06bff; border-color: rgba(192, 107, 255, 0.58); }
+    .rarity-Legendary { color: #ffd84d; border-color: rgba(255, 216, 77, 0.7); }
+    .rarity-Mythic { color: #ff4fd8; border-color: rgba(255, 79, 216, 0.85); }
+
+    .equip-item {
+      border: 1px solid rgba(120, 245, 255, 0.28);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.035);
+      padding: 10px;
+      margin-bottom: 9px;
+    }
+
+    .equip-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 9px;
+    }
+
+    .tiny {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 760px) {
+      .screen { padding: calc(10px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)); }
+      .menu-grid { grid-template-columns: repeat(2, 1fr); }
+      .two-col { grid-template-columns: 1fr; }
+      .hud-top { grid-template-columns: 1fr auto; }
+      .hud-skills { grid-column: 1 / -1; }
+      .cards { grid-template-columns: 1fr; }
+      .card { min-height: 116px; }
+      .stick { width: 136px; height: 76px; }
+      .stick i { left: 48px; top: 18px; width: 40px; height: 40px; }
+      .dash-touch { width: 92px; height: 92px; }
+    }
+
+    @media (max-height: 580px) {
+      .title-card { padding: 12px; }
+      .menu { gap: 8px; }
+      .panel { padding: 10px; }
+      .menu-grid button { min-height: 48px; }
+      h1 { font-size: clamp(28px, 8vw, 52px); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div class="hud-top">
+        <div class="hud-box">
+          <div class="hud-line"><span>HP</span><span id="hpText">0 / 0</span></div>
+          <div class="bar"><i id="hpBar"></i></div>
+          <div class="hud-line" style="margin-top:7px;"><span>EXP</span><span id="xpText">Lv.1</span></div>
+          <div class="bar xp"><i id="xpBar"></i></div>
+        </div>
+        <div class="hud-box hud-skills">
+          <div class="hud-line"><span>SKILLS</span><span id="killText">0 KOs</span></div>
+          <div id="skillList" class="skills"></div>
+        </div>
+        <div class="hud-box">
+          <div class="hud-line"><span>TIME</span><span id="timeText">00:00</span></div>
+          <div class="hud-line"><span>COIN</span><span id="runCoinText">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="touchLayer">
+      <div id="stick" class="stick"><i id="stickKnob"></i></div>
+      <button id="dashTouch" class="dash-touch">DASH</button>
+    </div>
+
+    <div id="rareToast" class="toast"></div>
+
+    <section id="title" class="screen active">
+      <div class="menu">
+        <div class="panel title-card">
+          <h1>Dungeon Coin Survivors</h1>
+          <p class="sub">左右移動だけで見守る、コイン購入型のネオン放置サバイバル。</p>
+        </div>
+        <div class="panel">
+          <div class="menu-grid">
+            <button class="primary" data-action="start">プレイ開始</button>
+            <button data-action="upgrades">強化</button>
+            <button data-action="equipment">装備</button>
+            <button data-action="codex">図鑑</button>
+            <button data-action="settings">設定</button>
+            <button class="danger" data-action="reset">セーブリセット</button>
+          </div>
+        </div>
+        <div class="panel two-col">
+          <div>
+            <h3>現在のデータ</h3>
+            <p class="sub" id="saveSummary"></p>
+          </div>
+          <div>
+            <h3>選択キャラクター</h3>
+            <p class="sub" id="charSummary"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="levelUp" class="screen">
+      <div class="panel" style="width:min(900px,100%);">
+        <h2>LEVEL UP</h2>
+        <p class="sub">強化を1つ選んでください。選択するまでゲームは停止します。</p>
+        <div id="levelCards" class="cards"></div>
+      </div>
+    </section>
+
+    <section id="result" class="screen">
+      <div class="panel" style="width:min(760px,100%);">
+        <h2 id="resultTitle">RESULT</h2>
+        <div id="resultStats" style="margin:12px 0;"></div>
+        <div class="menu-grid">
+          <button class="primary" data-action="retry">もう一度プレイ</button>
+          <button data-action="title">タイトルへ戻る</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="upgrades" class="screen">
+      <div class="menu">
+        <div class="panel row">
+          <div>
+            <h2>永久強化</h2>
+            <p class="sub">集めたコインで、次の探索を少しずつ有利にします。</p>
+          </div>
+          <button data-action="title">戻る</button>
+        </div>
+        <div class="panel scroll" id="upgradeList"></div>
+      </div>
+    </section>
+
+    <section id="equipment" class="screen">
+      <div class="menu">
+        <div class="panel row">
+          <div>
+            <h2>装備</h2>
+            <p class="sub">装備はコインで購入します。1つだけ装着でき、不要な装備は売却できます。</p>
+          </div>
+          <button data-action="title">戻る</button>
+        </div>
+        <div class="panel scroll" id="equipmentList"></div>
+      </div>
+    </section>
+
+    <section id="codex" class="screen">
+      <div class="menu">
+        <div class="panel row">
+          <div>
+            <h2>図鑑</h2>
+            <p class="sub">倒した敵、購入した装備レア度、解放したスキルを記録します。</p>
+          </div>
+          <button data-action="title">戻る</button>
+        </div>
+        <div class="panel scroll" id="codexList"></div>
+      </div>
+    </section>
+
+    <section id="settings" class="screen">
+      <div class="menu">
+        <div class="panel row">
+          <div>
+            <h2>設定</h2>
+            <p class="sub">端末に合わせて演出を調整できます。</p>
+          </div>
+          <button data-action="title">戻る</button>
+        </div>
+        <div class="panel" id="settingsList"></div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    /* =========================================================
+       変更しやすい基本データ
+       - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
+       ========================================================= */
+    const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
+    const TAU = Math.PI * 2;
+
+    const CHARACTERS = {
+      knight: { id: "knight", name: "Knight", hp: 130, speed: 185, damage: 18, fireRate: 1.25, crit: 0.05, magnet: 90, coin: 1, rare: 0 }
+      // 追加例: mage / ninja / gambler をここに足すだけで設計上は拡張できます。
+    };
+
+    const UPGRADE_DEFS = [
+      { id: "hp", name: "初期HPアップ", max: 20, baseCost: 45, desc: "最大HP +8", apply: (s, lv) => s.hp += lv * 8 },
+      { id: "damage", name: "初期攻撃力アップ", max: 20, baseCost: 55, desc: "攻撃力 +5%", apply: (s, lv) => s.damage *= 1 + lv * 0.05 },
+      { id: "speed", name: "初期移動速度アップ", max: 15, baseCost: 50, desc: "移動速度 +2.5%", apply: (s, lv) => s.speed *= 1 + lv * 0.025 },
+      { id: "coin", name: "コイン獲得倍率アップ", max: 20, baseCost: 60, desc: "コイン +5%", apply: (s, lv) => s.coin *= 1 + lv * 0.05 },
+      { id: "rare", name: "高レア購入率アップ", max: 15, baseCost: 75, desc: "ショップ高レア率 +0.6%", apply: (s, lv) => s.rare += lv * 0.006 },
+      { id: "magnet", name: "初期経験値取得範囲アップ", max: 15, baseCost: 45, desc: "取得範囲 +8", apply: (s, lv) => s.magnet += lv * 8 }
+    ];
+
+    const SKILL_POOL = [
+      { id: "atk", name: "攻撃力アップ", desc: "弾のダメージ +22%", run: g => g.player.damage *= 1.22 },
+      { id: "rate", name: "攻撃速度アップ", desc: "自動攻撃の間隔を短縮", run: g => g.player.fireRate *= 1.18 },
+      { id: "multi", name: "弾数アップ", desc: "同時に撃つ弾 +1", run: g => g.player.projectiles += 1 },
+      { id: "move", name: "移動速度アップ", desc: "移動速度 +15%", run: g => g.player.speed *= 1.15 },
+      { id: "maxhp", name: "最大HPアップ", desc: "最大HP +28 / 少し回復", run: g => { g.player.maxHp += 28; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 28); } },
+      { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +25%", run: g => g.player.coinMult *= 1.25 },
+      { id: "magnet", name: "経験値取得範囲アップ", desc: "ジェムとコインの吸引範囲 +50", run: g => g.player.magnet += 50 },
+      { id: "fire", name: "炎の弾を追加", desc: "弾が燃焼ダメージを与える", run: g => g.player.fireLevel += 1 },
+      { id: "orb", name: "雷のオーブを追加", desc: "周囲を回る雷オーブ +1", run: g => g.player.orbs += 1 },
+      { id: "poison", name: "毒フィールドを追加", desc: "近くの敵に継続ダメージ", run: g => g.player.poison += 1 },
+      { id: "heal", name: "敵撃破時に回復", desc: "撃破時にHPを1回復", run: g => g.player.killHeal += 1 }
+    ];
+
+    const ENEMY_TYPES = {
+      slime: { name: "Neon Slime", hp: 28, speed: 62, damage: 9, xp: 5, coin: 2, color: "#54f7ff", radius: 13 },
+      bat: { name: "Glitch Bat", hp: 22, speed: 112, damage: 7, xp: 6, coin: 2, color: "#ff4fd8", radius: 10 },
+      brute: { name: "Chrome Brute", hp: 88, speed: 48, damage: 18, xp: 14, coin: 5, color: "#ffd84d", radius: 18 },
+      boss: { name: "Vault Tyrant", hp: 1500, speed: 42, damage: 24, xp: 80, coin: 120, color: "#ff4d69", radius: 46 }
+    };
+
+    const RARITIES = [
+      { id: "Common", color: "#d6e3f2", value: 18, chance: 0.62 },
+      { id: "Rare", color: "#54f7ff", value: 38, chance: 0.24 },
+      { id: "Epic", color: "#c06bff", value: 88, chance: 0.095 },
+      { id: "Legendary", color: "#ffd84d", value: 180, chance: 0.035 },
+      { id: "Mythic", color: "#ff4fd8", value: 420, chance: 0.01 }
+    ];
+
+    const SHOP_PACKS = [
+      { id: "common", name: "コモン装備購入", cost: 80, minRarity: 0, luck: 0, desc: "安く数を増やす基本パック" },
+      { id: "rare", name: "レア装備購入", cost: 240, minRarity: 1, luck: 0.08, desc: "Rare以上が確定する中級パック" },
+      { id: "epic", name: "エピック装備購入", cost: 720, minRarity: 2, luck: 0.16, desc: "Epic以上が確定する高級パック" }
+    ];
+
+    const EQUIP_EFFECTS = [
+      { id: "damagePct", label: "攻撃力", unit: "%", min: 8, max: 24, apply: (p, v) => p.damage *= 1 + v / 100 },
+      { id: "ratePct", label: "攻撃速度", unit: "%", min: 6, max: 20, apply: (p, v) => p.fireRate *= 1 + v / 100 },
+      { id: "hpFlat", label: "最大HP", unit: "", min: 12, max: 55, apply: (p, v) => { p.maxHp += v; p.hp += v; } },
+      { id: "coinPct", label: "コイン獲得量", unit: "%", min: 8, max: 28, apply: (p, v) => p.coinMult *= 1 + v / 100 },
+      { id: "critPct", label: "クリティカル率", unit: "%", min: 3, max: 13, apply: (p, v) => p.crit += v / 100 },
+      { id: "healKill", label: "撃破時HP回復", unit: "", min: 1, max: 3, apply: (p, v) => p.killHeal += v },
+      { id: "rarePct", label: "高レア購入率", unit: "%", min: 2, max: 8, apply: (p, v) => p.rare += v / 100 }
+    ];
+
+    const $ = id => document.getElementById(id);
+    const canvas = $("game");
+    const ctx = canvas.getContext("2d", { alpha: false });
+
+    const screens = {
+      title: $("title"), levelUp: $("levelUp"), result: $("result"),
+      upgrades: $("upgrades"), equipment: $("equipment"), codex: $("codex"), settings: $("settings")
+    };
+
+    let W = 1, H = 1, DPR = 1;
+    let screen = "title";
+    let audioCtx = null;
+    let lastTime = 0;
+    let game = null;
+
+    const input = {
+      keys: new Set(),
+      stick: { active: false, id: null, x: 0, y: 0, dx: 0, dy: 0 },
+      dashPressed: false
+    };
+
+    /* =========================================================
+       セーブデータ
+       - localStorageにJSONで保存します。
+       - 新しい項目を追加しても壊れにくいようにdefaultSaveとmergeします。
+       ========================================================= */
+    function defaultSave() {
+      return {
+        coins: 0,
+        upgrades: Object.fromEntries(UPGRADE_DEFS.map(u => [u.id, 0])),
+        equipment: [],
+        equippedId: null,
+        codex: { enemies: {}, rarities: {}, skills: {}, achievements: {} },
+        best: { time: 0, kills: 0, coins: 0 },
+        settings: { sound: true, shake: true, damageNumbers: true }
+      };
+    }
+
+    let save = loadSave();
+
+    function loadSave() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) return defaultSave();
+        const data = JSON.parse(raw);
+        const d = defaultSave();
+        return {
+          ...d,
+          ...data,
+          upgrades: { ...d.upgrades, ...(data.upgrades || {}) },
+          codex: { ...d.codex, ...(data.codex || {}) },
+          best: { ...d.best, ...(data.best || {}) },
+          settings: { ...d.settings, ...(data.settings || {}) }
+        };
+      } catch {
+        return defaultSave();
+      }
+    }
+
+    function saveGame() {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+      renderTitleSummary();
+    }
+
+    /* =========================================================
+       画面サイズ
+       - CSSサイズと実Canvasピクセルを分けて、Retinaでも軽く見やすく描画します。
+       ========================================================= */
+    function resize() {
+      DPR = Math.min(2, window.devicePixelRatio || 1);
+      W = Math.max(320, window.innerWidth);
+      H = Math.max(320, window.innerHeight);
+      canvas.width = Math.floor(W * DPR);
+      canvas.height = Math.floor(H * DPR);
+      canvas.style.width = W + "px";
+      canvas.style.height = H + "px";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      if (game) {
+        game.player.x = clamp(game.player.x, game.player.r, W - game.player.r);
+        game.player.y = playerLaneY();
+      }
+    }
+
+    window.addEventListener("resize", resize, { passive: true });
+    resize();
+
+    /* =========================================================
+       Web Audio効果音
+       - 外部ファイルなしで短い電子音を作ります。
+       ========================================================= */
+    function beep(type) {
+      if (!save.settings.sound) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const table = {
+          shoot: [520, 0.035, "square", 0.035],
+          kill: [180, 0.09, "sawtooth", 0.06],
+          coin: [880, 0.07, "triangle", 0.05],
+          level: [660, 0.18, "triangle", 0.08],
+          rare: [240, 0.55, "sawtooth", 0.1],
+          dash: [120, 0.08, "square", 0.04]
+        }[type] || [440, 0.05, "sine", 0.04];
+        osc.frequency.setValueAtTime(table[0], now);
+        osc.frequency.exponentialRampToValueAtTime(table[0] * 1.8, now + table[1]);
+        osc.type = table[2];
+        gain.gain.setValueAtTime(table[3], now);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + table[1]);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now);
+        osc.stop(now + table[1] + 0.02);
+      } catch {}
+    }
+
+    /* =========================================================
+       汎用ユーティリティ
+       ========================================================= */
+    function rand(min, max) { return min + Math.random() * (max - min); }
+    function irand(min, max) { return Math.floor(rand(min, max + 1)); }
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function dist2(a, b) { const x = a.x - b.x, y = a.y - b.y; return x * x + y * y; }
+    function len(x, y) { return Math.hypot(x, y) || 1; }
+    function fmtTime(t) {
+      const m = Math.floor(t / 60), s = Math.floor(t % 60);
+      return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+    function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+    function shuffle(arr) {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    }
+
+    function showScreen(name) {
+      screen = name;
+      Object.values(screens).forEach(s => s.classList.remove("active"));
+      if (screens[name]) screens[name].classList.add("active");
+      $("hud").classList.toggle("active", name === "game");
+      $("touchLayer").classList.toggle("active", name === "game" && isTouchDevice());
+      if (name === "title") renderTitleSummary();
+      if (name === "upgrades") renderUpgrades();
+      if (name === "equipment") renderEquipment();
+      if (name === "codex") renderCodex();
+      if (name === "settings") renderSettings();
+    }
+
+    function isTouchDevice() {
+      return matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
+    }
+
+    function playerLaneY() {
+      return clamp(H * 0.72, 230, H - 126);
+    }
+
+    /* =========================================================
+       プレイヤー初期化
+       - 永久強化と装備効果をここで合成します。
+       ========================================================= */
+    function buildPlayerStats() {
+      const base = { ...CHARACTERS.knight };
+      base.maxHp = base.hp;
+      base.coinMult = base.coin;
+      base.projectiles = 1;
+      base.fireLevel = 0;
+      base.orbs = 0;
+      base.poison = 0;
+      base.killHeal = 0;
+      UPGRADE_DEFS.forEach(u => u.apply(base, save.upgrades[u.id] || 0));
+      const eq = save.equipment.find(e => e.id === save.equippedId);
+      if (eq) eq.effects.forEach(e => {
+        const def = EQUIP_EFFECTS.find(x => x.id === e.id);
+        if (def) def.apply(base, e.value);
+      });
+      base.hp = base.maxHp;
+      return base;
+    }
+
+    function newGame() {
+      const p = buildPlayerStats();
+      game = {
+        state: "playing",
+        t: 0,
+        shake: 0,
+        spawn: 0,
+        fire: 0,
+        orbAngle: 0,
+        idleCoin: 0,
+        bossSpawned: false,
+        resultReason: "defeat",
+        player: {
+          x: W / 2, y: playerLaneY(), r: 14,
+          hp: p.hp, maxHp: p.maxHp, speed: p.speed, damage: p.damage,
+          fireRate: p.fireRate, projectiles: p.projectiles, crit: p.crit,
+          magnet: p.magnet, coinMult: p.coinMult, rare: p.rare,
+          fireLevel: p.fireLevel, orbs: p.orbs, poison: p.poison, killHeal: p.killHeal,
+          level: 1, xp: 0, nextXp: 24, dashCd: 0, dashTime: 0, lastDir: 1
+        },
+        enemies: [],
+        bullets: [],
+        drops: [],
+        particles: [],
+        texts: [],
+        skills: [],
+        runCoins: 0,
+        kills: 0,
+        damage: 0,
+        foundEquipment: []
+      };
+      input.keys.clear();
+      input.dashPressed = false;
+      lastTime = performance.now();
+      showScreen("game");
+    }
+
+    /* =========================================================
+       入力
+       - PC: A/D または 左右矢印 + Space
+       - タッチ: 左右パッド + 右ダッシュ
+       ========================================================= */
+    window.addEventListener("keydown", e => {
+      if (["ArrowLeft","ArrowRight"," ","a","d","A","D"].includes(e.key)) e.preventDefault();
+      input.keys.add(e.key);
+      if (e.key === " ") input.dashPressed = true;
+    });
+    window.addEventListener("keyup", e => input.keys.delete(e.key));
+
+    const stick = $("stick");
+    const knob = $("stickKnob");
+    stick.addEventListener("pointerdown", e => {
+      stick.setPointerCapture(e.pointerId);
+      input.stick.active = true;
+      input.stick.id = e.pointerId;
+      updateStick(e);
+    });
+    stick.addEventListener("pointermove", e => {
+      if (input.stick.id === e.pointerId) updateStick(e);
+    });
+    stick.addEventListener("pointerup", endStick);
+    stick.addEventListener("pointercancel", endStick);
+
+    function updateStick(e) {
+      const r = stick.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const limit = r.width * 0.32;
+      const dx = clamp(e.clientX - cx, -limit, limit);
+      input.stick.dx = dx / limit;
+      input.stick.dy = 0;
+      knob.style.transform = `translate(${dx}px, 0)`;
+    }
+
+    function endStick(e) {
+      if (input.stick.id !== e.pointerId) return;
+      input.stick.active = false;
+      input.stick.id = null;
+      input.stick.dx = input.stick.dy = 0;
+      knob.style.transform = "translate(0,0)";
+    }
+
+    $("dashTouch").addEventListener("pointerdown", e => {
+      e.preventDefault();
+      input.dashPressed = true;
+    });
+
+    /* =========================================================
+       メインループ
+       ========================================================= */
+    function loop(now) {
+      const dt = Math.min(0.033, (now - lastTime) / 1000 || 0);
+      lastTime = now;
+      if (screen === "game" && game && game.state === "playing") update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function update(dt) {
+      const g = game, p = g.player;
+      g.t += dt;
+      g.spawn -= dt;
+      g.fire -= dt;
+      g.orbAngle += dt * 2.7;
+      p.dashCd = Math.max(0, p.dashCd - dt);
+      p.dashTime = Math.max(0, p.dashTime - dt);
+      g.shake = Math.max(0, g.shake - dt * 18);
+
+      movePlayer(dt);
+      gainIdleCoin(dt);
+      spawnEnemies(dt);
+      autoAttack(dt);
+      updateBullets(dt);
+      updateEnemies(dt);
+      updateDrops(dt);
+      updateParticles(dt);
+      applyAuraDamage(dt);
+      updateHud();
+
+      if (g.t >= 180 && !g.bossSpawned) spawnBoss();
+      if (p.hp <= 0) finishRun("defeat");
+    }
+
+    function movePlayer(dt) {
+      const p = game.player;
+      let x = 0;
+      if (input.keys.has("a") || input.keys.has("A") || input.keys.has("ArrowLeft")) x -= 1;
+      if (input.keys.has("d") || input.keys.has("D") || input.keys.has("ArrowRight")) x += 1;
+      if (input.stick.active) x += input.stick.dx;
+      x = clamp(x, -1, 1);
+      if (Math.abs(x) > 0.08) p.lastDir = x > 0 ? 1 : -1;
+
+      if (input.dashPressed && p.dashCd <= 0) {
+        p.dashTime = 0.16;
+        p.dashCd = 1.15;
+        if (Math.abs(x) <= 0.08) x = p.lastDir;
+        game.shake = 3;
+        beep("dash");
+      }
+      input.dashPressed = false;
+
+      const mult = p.dashTime > 0 ? 3.2 : 1;
+      p.x = clamp(p.x + x * p.speed * mult * dt, p.r, W - p.r);
+      p.y = playerLaneY();
+    }
+
+    function gainIdleCoin(dt) {
+      const g = game, p = g.player;
+      g.idleCoin += dt * (0.45 + g.t / 260) * p.coinMult;
+      if (g.idleCoin >= 1) {
+        const coins = Math.floor(g.idleCoin);
+        g.idleCoin -= coins;
+        g.runCoins += coins;
+        if (save.settings.damageNumbers) addText(p.x, p.y - 34, "+" + coins + "C", "#ffd84d");
+      }
+    }
+
+    function spawnEnemies() {
+      const g = game;
+      if (g.spawn > 0) return;
+      const t = g.t;
+      const interval = t < 30 ? 1.05 : t < 60 ? 0.72 : t < 120 ? 0.46 : 0.32;
+      const pack = t < 60 ? 1 : t < 120 ? 2 : 3;
+      g.spawn = interval;
+      for (let i = 0; i < pack; i++) {
+        const roll = Math.random();
+        let type = "slime";
+        if (t > 45 && roll < 0.34) type = "bat";
+        if (t > 120 && roll < 0.28) type = "brute";
+        spawnEnemy(type);
+      }
+    }
+
+    function spawnEnemy(type) {
+      const def = ENEMY_TYPES[type];
+      const margin = 34;
+      const edgeRoll = Math.random();
+      const x = edgeRoll < 0.15 ? -margin : edgeRoll > 0.85 ? W + margin : rand(0, W);
+      const y = type === "boss" ? -90 : rand(-100, -margin);
+      const scale = 1 + game.t / 210;
+      game.enemies.push({
+        type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
+        speed: def.speed * (1 + game.t / 520), damage: def.damage * scale,
+        xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
+      });
+    }
+
+    function spawnBoss() {
+      game.bossSpawned = true;
+      spawnEnemy("boss");
+      flashToast("BOSS: VAULT TYRANT", "#ff4d69");
+      game.shake = 10;
+      beep("rare");
+    }
+
+    function autoAttack() {
+      const g = game, p = g.player;
+      if (g.fire > 0) return;
+      let target = null, best = Infinity;
+      for (const e of g.enemies) {
+        const d = dist2(p, e);
+        if (d < best) { best = d; target = e; }
+      }
+      if (!target) return;
+      g.fire = 1 / p.fireRate;
+      const baseA = Math.atan2(target.y - p.y, target.x - p.x);
+      const count = p.projectiles;
+      for (let i = 0; i < count; i++) {
+        const spread = (i - (count - 1) / 2) * 0.16;
+        const a = baseA + spread;
+        const crit = Math.random() < p.crit;
+        g.bullets.push({
+          x: p.x, y: p.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520,
+          r: 5, life: 1.15, damage: p.damage * (crit ? 2 : 1), crit, fire: p.fireLevel
+        });
+      }
+      beep("shoot");
+    }
+
+    function updateBullets(dt) {
+      const g = game;
+      for (let i = g.bullets.length - 1; i >= 0; i--) {
+        const b = g.bullets[i];
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        b.life -= dt;
+        if (b.life <= 0 || b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
+          g.bullets.splice(i, 1);
+          continue;
+        }
+        for (const e of g.enemies) {
+          const rr = e.r + b.r;
+          if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < rr * rr) {
+            damageEnemy(e, b.damage, b.crit ? "#ffd84d" : "#eef8ff");
+            if (b.fire) e.burn = Math.max(e.burn, 1.8 + b.fire * 0.35);
+            g.bullets.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    function updateEnemies(dt) {
+      const g = game, p = g.player;
+      for (let i = g.enemies.length - 1; i >= 0; i--) {
+        const e = g.enemies[i];
+        const d = len(p.x - e.x, p.y - e.y);
+        e.x += (p.x - e.x) / d * e.speed * dt;
+        e.y += (p.y - e.y) / d * e.speed * dt;
+        e.hit = Math.max(0, e.hit - dt * 6);
+        if (e.burn > 0) {
+          e.burn -= dt;
+          damageEnemy(e, (4 + p.fireLevel * 2) * dt, "#ff8a4d", false);
+        }
+        if (d < p.r + e.r) {
+          p.hp -= e.damage * dt;
+          g.shake = save.settings.shake ? 4 : 0;
+        }
+        if (e.hp <= 0) {
+          killEnemy(e);
+          g.enemies.splice(i, 1);
+        }
+      }
+    }
+
+    function applyAuraDamage(dt) {
+      const g = game, p = g.player;
+      if (p.poison > 0) {
+        const range = 70 + p.poison * 15;
+        for (const e of g.enemies) {
+          if (dist2(p, e) < range * range) damageEnemy(e, (10 + p.poison * 5) * dt, "#9dff58", false);
+        }
+      }
+      if (p.orbs > 0) {
+        for (let i = 0; i < p.orbs; i++) {
+          const a = g.orbAngle + i * TAU / p.orbs;
+          const ox = p.x + Math.cos(a) * 55;
+          const oy = p.y + Math.sin(a) * 55;
+          for (const e of g.enemies) {
+            const rr = e.r + 11;
+            if ((e.x - ox) ** 2 + (e.y - oy) ** 2 < rr * rr) damageEnemy(e, 34 * dt, "#54f7ff", false);
+          }
+        }
+      }
+    }
+
+    function damageEnemy(e, amount, color, text = true) {
+      e.hp -= amount;
+      e.hit = 1;
+      game.damage += amount;
+      if (text && save.settings.damageNumbers) addText(e.x, e.y - e.r, Math.round(amount), color);
+    }
+
+    function killEnemy(e) {
+      const g = game, p = g.player, def = ENEMY_TYPES[e.type];
+      g.kills++;
+      save.codex.enemies[e.type] = (save.codex.enemies[e.type] || 0) + 1;
+      p.hp = Math.min(p.maxHp, p.hp + p.killHeal);
+      drop(e.x, e.y, "xp", def.xp, "#4d8dff");
+      drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", Math.ceil(def.coin * p.coinMult), "#ffd84d");
+      burst(e.x, e.y, def.color, 12);
+      beep("kill");
+      if (e.type === "boss") finishRun("victory");
+    }
+
+    function drop(x, y, kind, value, color) {
+      game.drops.push({ x, y, kind, value, color, r: kind === "coin" ? 6 : 5, vy: rand(-40, 20), vx: rand(-25, 25), life: 0 });
+    }
+
+    function updateDrops(dt) {
+      const g = game, p = g.player;
+      for (let i = g.drops.length - 1; i >= 0; i--) {
+        const d = g.drops[i];
+        d.life += dt;
+        const dd = len(p.x - d.x, p.y - d.y);
+        if (dd < p.magnet || dd < 32 || d.life > 0.45) {
+          d.x += (p.x - d.x) / dd * 520 * dt;
+          d.y += (p.y - d.y) / dd * 520 * dt;
+        } else {
+          d.x += d.vx * dt;
+          d.y += d.vy * dt;
+          d.vx *= 0.95;
+          d.vy *= 0.95;
+        }
+        if (dd < p.r + 12) {
+          if (d.kind === "xp") gainXp(d.value);
+          if (d.kind === "coin") {
+            g.runCoins += d.value;
+            addText(p.x, p.y - 22, "+" + d.value, "#ffd84d");
+            beep("coin");
+          }
+          g.drops.splice(i, 1);
+        }
+      }
+    }
+
+    function gainXp(v) {
+      const p = game.player;
+      p.xp += v;
+      while (p.xp >= p.nextXp) {
+        p.xp -= p.nextXp;
+        p.level++;
+        p.nextXp = Math.floor(p.nextXp * 1.23 + 12);
+        openLevelUp();
+      }
+    }
+
+    function openLevelUp() {
+      game.state = "levelup";
+      beep("level");
+      flashToast("LEVEL UP", "#54f7ff", 900);
+      const choices = shuffle([...SKILL_POOL]).slice(0, 3);
+      $("levelCards").innerHTML = choices.map(s => `
+        <button class="card" data-skill="${s.id}">
+          <strong>${s.name}</strong>
+          <span>${s.desc}</span>
+        </button>`).join("");
+      showScreen("levelUp");
+    }
+
+    function chooseSkill(id) {
+      const skill = SKILL_POOL.find(s => s.id === id);
+      if (!skill || !game || game.state !== "levelup") return;
+      skill.run(game);
+      game.skills.push(skill.name);
+      save.codex.skills[id] = true;
+      saveGame();
+      game.state = "playing";
+      showScreen("game");
+      lastTime = performance.now();
+    }
+
+    /* =========================================================
+       装備生成
+       - 戦闘ドロップではなく、装備画面のショップでコイン購入します。
+       - レア度で効果数と数値が上がります。
+       ========================================================= */
+    function shopLuckBonus() {
+      let bonus = (save.upgrades.rare || 0) * 0.006;
+      const eq = save.equipment.find(e => e.id === save.equippedId);
+      if (eq) {
+        for (const effect of eq.effects) {
+          if (effect.id === "rarePct") bonus += effect.value / 100;
+        }
+      }
+      return bonus;
+    }
+
+    function createEquipment(minRarity = 0, packLuck = 0) {
+      const roll = Math.random();
+      let acc = 0, rarity = RARITIES[0];
+      const rareBonus = shopLuckBonus() + packLuck;
+      for (let i = RARITIES.length - 1; i >= 0; i--) {
+        const r = RARITIES[i];
+        acc += r.chance + (i >= 2 ? rareBonus : 0) + (i === 1 ? rareBonus * 0.35 : 0);
+        if (roll < acc) { rarity = r; break; }
+      }
+      if (RARITIES.findIndex(r => r.id === rarity.id) < minRarity) rarity = RARITIES[minRarity];
+      const rarityIndex = RARITIES.findIndex(r => r.id === rarity.id);
+      const count = clamp(2 + Math.floor(rarityIndex / 2) + (rarityIndex === 4 ? 1 : 0), 2, 4);
+      const names = ["Neon Blade", "Vault Charm", "Circuit Crown", "Pulse Ring", "Chrome Relic", "Quantum Medal"];
+      const effects = shuffle([...EQUIP_EFFECTS]).slice(0, count).map(def => ({
+        id: def.id,
+        value: Math.round(rand(def.min, def.max) * (1 + rarityIndex * 0.35))
+      }));
+      return { id: uid(), name: names[irand(0, names.length - 1)], rarity: rarity.id, effects, value: rarity.value };
+    }
+
+    function buyEquipmentPack(id) {
+      const pack = SHOP_PACKS.find(p => p.id === id);
+      if (!pack || save.coins < pack.cost) return;
+      save.coins -= pack.cost;
+      const eq = createEquipment(pack.minRarity, pack.luck);
+      save.equipment.unshift(eq);
+      save.equipment = save.equipment.slice(0, 80);
+      save.codex.rarities[eq.rarity] = (save.codex.rarities[eq.rarity] || 0) + 1;
+      saveGame();
+      renderEquipment();
+      const rareIndex = RARITIES.findIndex(r => r.id === eq.rarity);
+      flashToast(`${eq.rarity} PURCHASE! ${eq.name}`, RARITIES[rareIndex].color, rareIndex >= 2 ? 1900 : 1100);
+      beep(rareIndex >= 2 ? "rare" : "coin");
+    }
+
+    function effectText(e) {
+      const def = EQUIP_EFFECTS.find(x => x.id === e.id);
+      if (!def) return "";
+      const sign = e.id.includes("Pct") || e.id === "critPct" || e.id === "rarePct" ? "+" : "+";
+      return `${def.label} ${sign}${e.value}${def.unit}`;
+    }
+
+    /* =========================================================
+       リザルトと保存反映
+       ========================================================= */
+    function finishRun(reason) {
+      if (!game || game.state === "finished") return;
+      game.state = "finished";
+      game.resultReason = reason;
+      const coins = game.runCoins;
+      save.coins += coins;
+      save.best.time = Math.max(save.best.time, game.t);
+      save.best.kills = Math.max(save.best.kills, game.kills);
+      save.best.coins = Math.max(save.best.coins, coins);
+      if (reason === "victory") save.codex.achievements.boss = true;
+      if (game.t >= 60) save.codex.achievements.minute = true;
+      if (game.kills >= 100) save.codex.achievements.hunter = true;
+      saveGame();
+      renderResult();
+      showScreen("result");
+    }
+
+    function renderResult() {
+      $("resultTitle").textContent = game.resultReason === "victory" ? "BOSS DEFEATED" : "RESULT";
+      const eq = game.foundEquipment.length
+        ? game.foundEquipment.map(e => `<span class="pill rarity-${e.rarity}">${e.rarity} ${e.name}</span>`).join(" ")
+        : "<span class='tiny'>戦闘ドロップなし。装備画面でコイン購入できます。</span>";
+      $("resultStats").innerHTML = `
+        <div class="row"><span>生存時間</span><strong>${fmtTime(game.t)}</strong></div>
+        <div class="row"><span>撃破数</span><strong>${game.kills}</strong></div>
+        <div class="row"><span>獲得コイン</span><strong>${game.runCoins}</strong></div>
+        <div class="row"><span>獲得装備</span><div>${eq}</div></div>
+        <div class="row"><span>合計ダメージ</span><strong>${Math.round(game.damage)}</strong></div>
+      `;
+    }
+
+    /* =========================================================
+       描画
+       - 図形だけで軽く、ネオン感は影と線で出しています。
+       ========================================================= */
+    function draw() {
+      ctx.save();
+      ctx.fillStyle = "#050510";
+      ctx.fillRect(0, 0, W, H);
+      drawGrid();
+      if (game) {
+        const sx = save.settings.shake ? rand(-game.shake, game.shake) : 0;
+        const sy = save.settings.shake ? rand(-game.shake, game.shake) : 0;
+        ctx.translate(sx, sy);
+        drawDrops();
+        drawBullets();
+        drawEnemies();
+        drawPlayer();
+        drawParticles();
+        drawTexts();
+      }
+      ctx.restore();
+      if (screen !== "game" && !game) drawAttract();
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = "rgba(84,247,255,0.08)";
+      ctx.lineWidth = 1;
+      const step = 48;
+      const ox = game ? -(game.player.x % step) : 0;
+      const oy = game ? -(game.player.y % step) : 0;
+      for (let x = ox; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+      for (let y = oy; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      if (game) {
+        ctx.strokeStyle = "rgba(255,216,77,0.24)";
+        ctx.setLineDash([10, 12]);
+        ctx.beginPath();
+        ctx.moveTo(0, playerLaneY() + 24);
+        ctx.lineTo(W, playerLaneY() + 24);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    function drawAttract() {
+      const t = performance.now() / 1000;
+      ctx.save();
+      ctx.globalAlpha = 0.5;
+      for (let i = 0; i < 18; i++) {
+        const a = t * 0.25 + i * TAU / 18;
+        const x = W / 2 + Math.cos(a) * (120 + i * 9);
+        const y = H / 2 + Math.sin(a * 1.3) * (80 + i * 5);
+        circle(x, y, 3 + i % 4, i % 2 ? "#ff4fd8" : "#54f7ff", true);
+      }
+      ctx.restore();
+    }
+
+    function drawPlayer() {
+      const p = game.player;
+      if (p.poison > 0) {
+        ctx.globalAlpha = 0.13;
+        circle(p.x, p.y, 70 + p.poison * 15, "#9dff58", true);
+        ctx.globalAlpha = 1;
+      }
+      for (let i = 0; i < p.orbs; i++) {
+        const a = game.orbAngle + i * TAU / p.orbs;
+        circle(p.x + Math.cos(a) * 55, p.y + Math.sin(a) * 55, 10, "#54f7ff", true);
+      }
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = "#54f7ff";
+      circle(p.x, p.y, p.r + (p.dashTime > 0 ? 5 : 0), "#54f7ff", true);
+      ctx.shadowBlur = 0;
+      circle(p.x, p.y, p.r + 5, "#eef8ff", false, 2);
+    }
+
+    function drawEnemies() {
+      for (const e of game.enemies) {
+        const def = ENEMY_TYPES[e.type];
+        ctx.shadowBlur = e.type === "boss" ? 24 : 12;
+        ctx.shadowColor = def.color;
+        circle(e.x, e.y, e.r, e.hit > 0 ? "#fff" : def.color, true);
+        ctx.shadowBlur = 0;
+        circle(e.x, e.y, e.r + 3, def.color, false, 2);
+        const w = e.r * 2;
+        ctx.fillStyle = "rgba(255,255,255,0.18)";
+        ctx.fillRect(e.x - e.r, e.y - e.r - 10, w, 4);
+        ctx.fillStyle = "#ff4d69";
+        ctx.fillRect(e.x - e.r, e.y - e.r - 10, w * clamp(e.hp / e.maxHp, 0, 1), 4);
+      }
+    }
+
+    function drawBullets() {
+      for (const b of game.bullets) {
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = b.fire ? "#ff8a4d" : "#ffd84d";
+        circle(b.x, b.y, b.r + (b.crit ? 2 : 0), b.fire ? "#ff8a4d" : "#ffd84d", true);
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function drawDrops() {
+      for (const d of game.drops) {
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = d.color;
+        if (d.kind === "coin") {
+          ctx.fillStyle = d.color;
+          ctx.fillRect(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2);
+        } else {
+          circle(d.x, d.y, d.r, d.color, true);
+        }
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    function drawParticles() {
+      for (const p of game.particles) {
+        ctx.globalAlpha = p.life / p.max;
+        circle(p.x, p.y, p.r, p.color, true);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawTexts() {
+      ctx.textAlign = "center";
+      ctx.font = "800 15px system-ui";
+      for (const t of game.texts) {
+        ctx.globalAlpha = t.life / t.max;
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.text, t.x, t.y);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function circle(x, y, r, color, fill, lw = 1) {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      if (fill) { ctx.fillStyle = color; ctx.fill(); }
+      else { ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.stroke(); }
+    }
+
+    function burst(x, y, color, n) {
+      for (let i = 0; i < n; i++) {
+        const a = rand(0, TAU), s = rand(70, 220);
+        game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rand(2, 5), color, life: rand(0.25, 0.55), max: 0.55 });
+      }
+    }
+
+    function addText(x, y, text, color) {
+      game.texts.push({ x, y, text, color, vy: -36, life: 0.75, max: 0.75 });
+    }
+
+    function updateParticles(dt) {
+      const g = game;
+      for (let i = g.particles.length - 1; i >= 0; i--) {
+        const p = g.particles[i];
+        p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+        p.vx *= 0.9; p.vy *= 0.9;
+        if (p.life <= 0) g.particles.splice(i, 1);
+      }
+      for (let i = g.texts.length - 1; i >= 0; i--) {
+        const t = g.texts[i];
+        t.y += t.vy * dt; t.life -= dt;
+        if (t.life <= 0) g.texts.splice(i, 1);
+      }
+    }
+
+    function flashToast(text, color, ms = 1900) {
+      const el = $("rareToast");
+      el.textContent = text;
+      el.style.color = color;
+      el.classList.remove("show");
+      void el.offsetWidth;
+      el.classList.add("show");
+      clearTimeout(flashToast.timer);
+      flashToast.timer = setTimeout(() => el.classList.remove("show"), ms);
+    }
+
+    function updateHud() {
+      const p = game.player;
+      $("hpText").textContent = `${Math.ceil(p.hp)} / ${Math.ceil(p.maxHp)}`;
+      $("hpBar").style.width = `${clamp(p.hp / p.maxHp, 0, 1) * 100}%`;
+      $("xpText").textContent = `Lv.${p.level}`;
+      $("xpBar").style.width = `${clamp(p.xp / p.nextXp, 0, 1) * 100}%`;
+      $("timeText").textContent = fmtTime(game.t);
+      $("runCoinText").textContent = game.runCoins;
+      $("killText").textContent = `${game.kills} KOs`;
+      const skills = game.skills.slice(-9).map(s => `<span class="pill">${s}</span>`).join("");
+      $("skillList").innerHTML = skills || "<span class='tiny'>レベルアップでスキルを獲得</span>";
+    }
+
+    /* =========================================================
+       メニュー描画
+       ========================================================= */
+    function renderTitleSummary() {
+      $("saveSummary").innerHTML = `
+        所持コイン: <b>${save.coins}</b><br>
+        最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
+        最高撃破数: <b>${save.best.kills}</b><br>
+        所持装備: <b>${save.equipment.length}</b>
+      `;
+      const c = CHARACTERS.knight;
+      $("charSummary").innerHTML = `${c.name}<br>高いHPで、左右移動だけの放置寄りバトルに向いた最初のキャラクターです。`;
+    }
+
+    function renderUpgrades() {
+      $("upgradeList").innerHTML = `<div class="row"><strong>所持コイン</strong><span class="pill">${save.coins}</span></div>` +
+        UPGRADE_DEFS.map(u => {
+          const lv = save.upgrades[u.id] || 0;
+          const cost = upgradeCost(u, lv);
+          const maxed = lv >= u.max;
+          const can = save.coins >= cost && !maxed;
+          return `
+            <div class="row">
+              <div>
+                <h3>${u.name}</h3>
+                <p class="tiny">${u.desc} / Lv.${lv} / ${u.max}</p>
+              </div>
+              <button class="${can ? "primary" : "disabled"}" data-upgrade="${u.id}">
+                ${maxed ? "MAX" : cost + "C 強化"}
+              </button>
+            </div>`;
+        }).join("");
+    }
+
+    function upgradeCost(u, lv) {
+      return Math.floor(u.baseCost * Math.pow(1.34, lv));
+    }
+
+    function buyUpgrade(id) {
+      const u = UPGRADE_DEFS.find(x => x.id === id);
+      if (!u) return;
+      const lv = save.upgrades[id] || 0;
+      const cost = upgradeCost(u, lv);
+      if (lv >= u.max || save.coins < cost) return;
+      save.coins -= cost;
+      save.upgrades[id] = lv + 1;
+      saveGame();
+      renderUpgrades();
+      beep("coin");
+    }
+
+    function renderEquipment() {
+      const shop = `
+        <div class="row">
+          <div>
+            <h3>装備ショップ</h3>
+            <p class="tiny">所持コイン ${save.coins}C / 高レア購入率ボーナス +${Math.round(shopLuckBonus() * 100)}%</p>
+          </div>
+        </div>
+        <div class="menu-grid" style="margin:10px 0 14px;">
+          ${SHOP_PACKS.map(p => `
+            <button class="${save.coins >= p.cost ? "primary" : "disabled"}" data-buy-equip="${p.id}">
+              ${p.name}<br><span class="tiny">${p.cost}C / ${p.desc}</span>
+            </button>`).join("")}
+        </div>`;
+      const inventory = save.equipment.length ? save.equipment.map(e => {
+        const equipped = e.id === save.equippedId;
+        return `
+          <div class="equip-item rarity-${e.rarity}">
+            <div class="row" style="padding-top:0;">
+              <div>
+                <h3>${e.name}</h3>
+                <span class="pill rarity-${e.rarity}">${e.rarity}</span> ${equipped ? "<span class='pill'>装備中</span>" : ""}
+              </div>
+              <strong>${e.value}C</strong>
+            </div>
+            <p class="tiny">${e.effects.map(effectText).join(" / ")}</p>
+            <div class="equip-actions">
+              <button class="primary" data-equip="${e.id}">${equipped ? "装備中" : "装備する"}</button>
+              <button class="danger" data-sell="${e.id}">売却</button>
+            </div>
+          </div>`;
+      }).join("") : `<p class="sub">まだ装備がありません。上のショップでコインを使って購入できます。</p>`;
+      $("equipmentList").innerHTML = shop + inventory;
+    }
+
+    function equipItem(id) {
+      save.equippedId = id;
+      saveGame();
+      renderEquipment();
+    }
+
+    function sellItem(id) {
+      const item = save.equipment.find(e => e.id === id);
+      if (!item) return;
+      save.coins += item.value;
+      save.equipment = save.equipment.filter(e => e.id !== id);
+      if (save.equippedId === id) save.equippedId = null;
+      saveGame();
+      renderEquipment();
+      beep("coin");
+    }
+
+    function renderCodex() {
+      const enemyRows = Object.entries(ENEMY_TYPES).map(([id, e]) => {
+        const n = save.codex.enemies[id] || 0;
+        return `<div class="row"><span>${e.name}</span><span class="pill">${n ? n + "体" : "未発見"}</span></div>`;
+      }).join("");
+      const rarityRows = RARITIES.map(r => {
+        const n = save.codex.rarities[r.id] || 0;
+        return `<div class="row rarity-${r.id}"><span>${r.id}</span><span class="pill">${n ? n + "個" : "未入手"}</span></div>`;
+      }).join("");
+      const skillRows = SKILL_POOL.map(s => {
+        const ok = save.codex.skills[s.id];
+        return `<div class="row"><span>${s.name}</span><span class="pill">${ok ? "解放済み" : "未解放"}</span></div>`;
+      }).join("");
+      const ach = [
+        ["minute", "1分生存"],
+        ["hunter", "100体撃破"],
+        ["boss", "ボス撃破"]
+      ].map(([id, name]) => `<div class="row"><span>${name}</span><span class="pill">${save.codex.achievements[id] ? "達成" : "未達成"}</span></div>`).join("");
+      $("codexList").innerHTML = `
+        <div class="two-col">
+          <div><h3>敵</h3>${enemyRows}</div>
+          <div><h3>装備レア度</h3>${rarityRows}</div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="two-col">
+          <div><h3>スキル</h3>${skillRows}</div>
+          <div><h3>実績</h3>${ach}</div>
+        </div>`;
+    }
+
+    function renderSettings() {
+      const s = save.settings;
+      $("settingsList").innerHTML = `
+        ${toggleRow("sound", "音量ON/OFF", s.sound)}
+        ${toggleRow("shake", "画面揺れON/OFF", s.shake)}
+        ${toggleRow("damageNumbers", "ダメージ数字ON/OFF", s.damageNumbers)}
+        <div class="row"><div><h3>セーブリセット</h3><p class="tiny">全データを初期化します。</p></div><button class="danger" data-action="reset">リセット</button></div>
+      `;
+    }
+
+    function toggleRow(id, label, on) {
+      return `<div class="row"><div><h3>${label}</h3><p class="tiny">${on ? "ON" : "OFF"}</p></div><button data-setting="${id}">${on ? "ON" : "OFF"}</button></div>`;
+    }
+
+    function toggleSetting(id) {
+      save.settings[id] = !save.settings[id];
+      saveGame();
+      renderSettings();
+    }
+
+    function resetSave() {
+      if (!confirm("セーブデータをすべてリセットしますか？")) return;
+      save = defaultSave();
+      saveGame();
+      renderTitleSummary();
+      showScreen("title");
+    }
+
+    /* =========================================================
+       UIイベント
+       - data属性で画面遷移と操作をまとめています。
+       - pointerupにも反応させて、スマホ/iPadでカードが押し逃される問題を避けます。
+       ========================================================= */
+    let lastButtonTapAt = 0;
+    let lastButtonTapEl = null;
+
+    function activateButton(e) {
+      const el = e.target && e.target.closest ? e.target.closest("button") : null;
+      if (!el) return;
+      if (el.classList.contains("disabled")) return;
+      const now = performance.now();
+      if (e.type === "click" && lastButtonTapEl === el && now - lastButtonTapAt < 450) return;
+      if (e.type === "pointerup") {
+        lastButtonTapAt = now;
+        lastButtonTapEl = el;
+      }
+      e.preventDefault();
+      const action = el.dataset.action;
+      if (action === "start" || action === "retry") newGame();
+      if (action === "title") { game = null; showScreen("title"); }
+      if (action === "upgrades") showScreen("upgrades");
+      if (action === "equipment") showScreen("equipment");
+      if (action === "codex") showScreen("codex");
+      if (action === "settings") showScreen("settings");
+      if (action === "reset") resetSave();
+      if (el.dataset.skill) chooseSkill(el.dataset.skill);
+      if (el.dataset.upgrade) buyUpgrade(el.dataset.upgrade);
+      if (el.dataset.buyEquip) buyEquipmentPack(el.dataset.buyEquip);
+      if (el.dataset.equip) equipItem(el.dataset.equip);
+      if (el.dataset.sell) sellItem(el.dataset.sell);
+      if (el.dataset.setting) toggleSetting(el.dataset.setting);
+    }
+
+    document.addEventListener("pointerup", activateButton);
+    document.addEventListener("click", activateButton);
+
+    // iOS Safariで最初のタップ後にAudioContextを使えるようにしておきます。
+    document.addEventListener("pointerdown", () => {
+      if (save.settings.sound && !audioCtx) {
+        try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {}
+      }
+    }, { once: true });
+
+    renderTitleSummary();
+  })();
+  </script>
+</body>
+</html>
