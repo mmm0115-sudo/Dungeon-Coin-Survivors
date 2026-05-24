@@ -24,6 +24,8 @@
       --text: #eef8ff;
       --muted: #9eb6d9;
       --shadow: 0 0 22px rgba(84, 247, 255, 0.24);
+      --shop-w: clamp(280px, 34vw, 360px);
+      --shop-h: clamp(190px, 34vh, 260px);
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
@@ -218,6 +220,98 @@
     }
 
     #hud.active { display: flex; }
+
+    #runShop {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      z-index: 6;
+      display: none;
+      width: var(--shop-w);
+      padding: calc(10px + var(--safe-top)) 10px calc(10px + var(--safe-bottom));
+      border-right: 1px solid rgba(120, 245, 255, 0.28);
+      background: linear-gradient(180deg, rgba(6, 8, 19, 0.96), rgba(13, 17, 38, 0.96));
+      box-shadow: 10px 0 34px rgba(0,0,0,0.36);
+      pointer-events: auto;
+      overflow: hidden;
+    }
+
+    #runShop.active {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .shop-head {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid rgba(120, 245, 255, 0.28);
+      border-radius: 8px;
+      padding: 10px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .shop-title {
+      font-weight: 1000;
+      color: var(--gold);
+      font-size: 18px;
+    }
+
+    .shop-list {
+      min-height: 0;
+      overflow: auto;
+      display: grid;
+      gap: 8px;
+      padding-right: 3px;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .shop-buy {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+      width: 100%;
+      min-height: 112px;
+      text-align: left;
+      padding: 9px 10px;
+      border: 1px solid rgba(120, 245, 255, 0.24);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.035);
+    }
+
+    .shop-buy strong {
+      display: block;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
+    .shop-buy .tiny {
+      display: block;
+      margin-top: 3px;
+    }
+
+    .shop-cost {
+      color: var(--gold);
+      font-weight: 1000;
+      white-space: nowrap;
+    }
+
+    .shop-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .buy-pack {
+      min-height: 38px;
+      padding: 6px;
+      font-size: 12px;
+      font-weight: 900;
+    }
 
     .hud-top {
       display: grid;
@@ -422,6 +516,52 @@
       .dash-touch { width: 92px; height: 92px; }
     }
 
+    @media (orientation: landscape) and (min-width: 820px) {
+      #hud.active {
+        left: calc(var(--shop-w) + 10px);
+      }
+
+      #touchLayer.active .stick {
+        left: calc(var(--shop-w) + 18px);
+      }
+    }
+
+    @media (orientation: portrait), (max-width: 819px) {
+      #runShop {
+        top: auto;
+        right: 0;
+        width: 100%;
+        height: var(--shop-h);
+        border-right: 0;
+        border-top: 1px solid rgba(120, 245, 255, 0.28);
+        box-shadow: 0 -10px 34px rgba(0,0,0,0.36);
+        padding: 8px 10px calc(8px + var(--safe-bottom));
+      }
+
+      #runShop.active {
+        display: grid;
+        grid-template-columns: 0.8fr 1.2fr;
+      }
+
+      .shop-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .shop-buy {
+        min-height: 118px;
+        grid-template-columns: 1fr;
+      }
+
+      #hud.active {
+        bottom: calc(var(--shop-h) + 8px);
+      }
+
+      #touchLayer.active .stick,
+      #touchLayer.active .dash-touch {
+        bottom: calc(var(--shop-h) + 18px + var(--safe-bottom));
+      }
+    }
+
     @media (max-height: 580px) {
       .title-card { padding: 12px; }
       .menu { gap: 8px; }
@@ -452,6 +592,17 @@
           <div class="hud-line"><span>COIN</span><span id="runCoinText">0</span></div>
         </div>
       </div>
+    </div>
+
+    <div id="runShop">
+      <div class="shop-head">
+        <div>
+          <div class="shop-title" id="stageText">Stage 1-1</div>
+          <div class="tiny" id="stageInfo">購入で強化しながら突破</div>
+        </div>
+        <div class="pill" id="shopCoinText">0C</div>
+      </div>
+      <div id="runShopItems" class="shop-list"></div>
     </div>
 
     <div id="touchLayer">
@@ -485,6 +636,14 @@
           <div>
             <h3>選択キャラクター</h3>
             <p class="sub" id="charSummary"></p>
+          </div>
+          <div>
+            <h3>ステージ</h3>
+            <p class="sub" id="stageSummary"></p>
+            <div class="equip-actions">
+              <button data-stage-step="-1">前へ</button>
+              <button data-stage-step="1">次へ</button>
+            </div>
           </div>
         </div>
       </div>
@@ -574,38 +733,38 @@
     const TAU = Math.PI * 2;
 
     const CHARACTERS = {
-      knight: { id: "knight", name: "Knight", hp: 130, speed: 185, damage: 18, fireRate: 1.25, crit: 0.05, magnet: 90, coin: 1, rare: 0 }
+      knight: { id: "knight", name: "Knight", hp: 240, speed: 220, damage: 42, fireRate: 2.05, crit: 0.07, magnet: 170, coin: 1, rare: 0 }
       // 追加例: mage / ninja / gambler をここに足すだけで設計上は拡張できます。
     };
 
     const UPGRADE_DEFS = [
-      { id: "hp", name: "初期HPアップ", max: 20, baseCost: 45, desc: "最大HP +8", apply: (s, lv) => s.hp += lv * 8 },
-      { id: "damage", name: "初期攻撃力アップ", max: 20, baseCost: 55, desc: "攻撃力 +5%", apply: (s, lv) => s.damage *= 1 + lv * 0.05 },
-      { id: "speed", name: "初期移動速度アップ", max: 15, baseCost: 50, desc: "移動速度 +2.5%", apply: (s, lv) => s.speed *= 1 + lv * 0.025 },
-      { id: "coin", name: "コイン獲得倍率アップ", max: 20, baseCost: 60, desc: "コイン +5%", apply: (s, lv) => s.coin *= 1 + lv * 0.05 },
-      { id: "rare", name: "高レア購入率アップ", max: 15, baseCost: 75, desc: "ショップ高レア率 +0.6%", apply: (s, lv) => s.rare += lv * 0.006 },
-      { id: "magnet", name: "初期経験値取得範囲アップ", max: 15, baseCost: 45, desc: "取得範囲 +8", apply: (s, lv) => s.magnet += lv * 8 }
+      { id: "hp", name: "初期HPアップ", baseCost: 45, desc: "最大HP +8", apply: (s, lv) => s.hp += lv * 8 },
+      { id: "damage", name: "初期攻撃力アップ", baseCost: 55, desc: "攻撃力 +5%", apply: (s, lv) => s.damage *= 1 + lv * 0.05 },
+      { id: "speed", name: "初期移動速度アップ", baseCost: 50, desc: "移動速度 +2.5%", apply: (s, lv) => s.speed *= 1 + lv * 0.025 },
+      { id: "coin", name: "コイン獲得倍率アップ", baseCost: 60, desc: "コイン +5%", apply: (s, lv) => s.coin *= 1 + lv * 0.05 },
+      { id: "rare", name: "高レア購入率アップ", baseCost: 75, desc: "ショップ高レア率 +0.6%", apply: (s, lv) => s.rare += lv * 0.006 },
+      { id: "magnet", name: "初期経験値取得範囲アップ", baseCost: 45, desc: "取得範囲 +8", apply: (s, lv) => s.magnet += lv * 8 }
     ];
 
     const SKILL_POOL = [
-      { id: "atk", name: "攻撃力アップ", desc: "弾のダメージ +22%", run: g => g.player.damage *= 1.22 },
-      { id: "rate", name: "攻撃速度アップ", desc: "自動攻撃の間隔を短縮", run: g => g.player.fireRate *= 1.18 },
-      { id: "multi", name: "弾数アップ", desc: "同時に撃つ弾 +1", run: g => g.player.projectiles += 1 },
-      { id: "move", name: "移動速度アップ", desc: "移動速度 +15%", run: g => g.player.speed *= 1.15 },
-      { id: "maxhp", name: "最大HPアップ", desc: "最大HP +28 / 少し回復", run: g => { g.player.maxHp += 28; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 28); } },
-      { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +25%", run: g => g.player.coinMult *= 1.25 },
-      { id: "magnet", name: "経験値取得範囲アップ", desc: "ジェムとコインの吸引範囲 +50", run: g => g.player.magnet += 50 },
-      { id: "fire", name: "炎の弾を追加", desc: "弾が燃焼ダメージを与える", run: g => g.player.fireLevel += 1 },
-      { id: "orb", name: "雷のオーブを追加", desc: "周囲を回る雷オーブ +1", run: g => g.player.orbs += 1 },
-      { id: "poison", name: "毒フィールドを追加", desc: "近くの敵に継続ダメージ", run: g => g.player.poison += 1 },
-      { id: "heal", name: "敵撃破時に回復", desc: "撃破時にHPを1回復", run: g => g.player.killHeal += 1 }
+      { id: "atk", name: "攻撃力アップ", desc: "弾のダメージ +18%", cost: 12, run: (g, n = 1) => g.player.damage *= Math.pow(1.18, n) },
+      { id: "rate", name: "攻撃速度アップ", desc: "自動攻撃の間隔を短縮", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.14, n) },
+      { id: "multi", name: "弾数アップ", desc: "同時に撃つ弾 +1", cost: 42, run: (g, n = 1) => g.player.projectiles += n },
+      { id: "move", name: "オート前進アップ", desc: "横スクロール速度 +8%", cost: 10, run: (g, n = 1) => g.autoSpeed *= Math.pow(1.08, n) },
+      { id: "maxhp", name: "最大HPアップ", desc: "最大HP +28 / 少し回復", cost: 18, run: (g, n = 1) => { g.player.maxHp += 28 * n; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 28 * n); } },
+      { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +18%", cost: 16, run: (g, n = 1) => g.player.coinMult *= Math.pow(1.18, n) },
+      { id: "magnet", name: "自動回収アップ", desc: "ジェムとコインをより早く回収", cost: 12, run: (g, n = 1) => g.player.magnet += 65 * n },
+      { id: "fire", name: "炎の弾を追加", desc: "弾が燃焼ダメージを与える", cost: 34, run: (g, n = 1) => g.player.fireLevel += n },
+      { id: "orb", name: "雷のオーブを追加", desc: "周囲を回る雷オーブ +1", cost: 48, run: (g, n = 1) => g.player.orbs += n },
+      { id: "poison", name: "毒フィールドを追加", desc: "近くの敵に継続ダメージ", cost: 40, run: (g, n = 1) => g.player.poison += n },
+      { id: "heal", name: "敵撃破時に回復", desc: "撃破時にHPを1回復", cost: 26, run: (g, n = 1) => g.player.killHeal += n }
     ];
 
     const ENEMY_TYPES = {
-      slime: { name: "Neon Slime", hp: 28, speed: 62, damage: 9, xp: 5, coin: 2, color: "#54f7ff", radius: 13 },
-      bat: { name: "Glitch Bat", hp: 22, speed: 112, damage: 7, xp: 6, coin: 2, color: "#ff4fd8", radius: 10 },
-      brute: { name: "Chrome Brute", hp: 88, speed: 48, damage: 18, xp: 14, coin: 5, color: "#ffd84d", radius: 18 },
-      boss: { name: "Vault Tyrant", hp: 1500, speed: 42, damage: 24, xp: 80, coin: 120, color: "#ff4d69", radius: 46 }
+      slime: { name: "Neon Slime", hp: 16, speed: 36, damage: 1.2, xp: 4, coin: 3, color: "#54f7ff", radius: 12 },
+      bat: { name: "Glitch Bat", hp: 14, speed: 64, damage: 1.8, xp: 5, coin: 3, color: "#ff4fd8", radius: 10 },
+      brute: { name: "Chrome Brute", hp: 48, speed: 28, damage: 4.2, xp: 12, coin: 8, color: "#ffd84d", radius: 18 },
+      boss: { name: "Vault Tyrant", hp: 260, speed: 20, damage: 6, xp: 70, coin: 160, color: "#ff4d69", radius: 42 }
     };
 
     const RARITIES = [
@@ -666,6 +825,7 @@
         equippedId: null,
         codex: { enemies: {}, rarities: {}, skills: {}, achievements: {} },
         best: { time: 0, kills: 0, coins: 0 },
+        stage: { unlocked: 1, selected: 1, clears: {} },
         settings: { sound: true, shake: true, damageNumbers: true }
       };
     }
@@ -684,6 +844,7 @@
           upgrades: { ...d.upgrades, ...(data.upgrades || {}) },
           codex: { ...d.codex, ...(data.codex || {}) },
           best: { ...d.best, ...(data.best || {}) },
+          stage: { ...d.stage, ...(data.stage || {}), clears: { ...d.stage.clears, ...((data.stage && data.stage.clears) || {}) } },
           settings: { ...d.settings, ...(data.settings || {}) }
         };
       } catch {
@@ -710,7 +871,8 @@
       canvas.style.height = H + "px";
       ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
       if (game) {
-        game.player.x = clamp(game.player.x, game.player.r, W - game.player.r);
+        const a = arenaRect();
+        game.player.x = clamp(game.player.x, a.x + game.player.r, a.x + a.w - game.player.r);
         game.player.y = playerLaneY();
       }
     }
@@ -761,6 +923,25 @@
       const m = Math.floor(t / 60), s = Math.floor(t % 60);
       return String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
     }
+    function formatStage(n) {
+      const world = Math.floor((n - 1) / 8) + 1;
+      const floor = ((n - 1) % 8) + 1;
+      return `${world}-${floor}`;
+    }
+    function stageConfig(n) {
+      const world = Math.floor((n - 1) / 8) + 1;
+      const floor = ((n - 1) % 8) + 1;
+      const late = n >= 17 ? 1 + (n - 16) * 0.18 : 1;
+      const endlessRamp = 1 + Math.max(0, n - 24) * 0.09;
+      const bossWall = n % 8 === 0 ? 1.8 : 1;
+      const difficulty = (1 + (world - 1) * 0.42 + (floor - 1) * 0.075) * late * endlessRamp * bossWall;
+      return {
+        n, world, floor, difficulty,
+        duration: 42 + Math.min(24, (world - 1) * 4 + floor * 1.3),
+        bossHp: 0.86 + difficulty * (n % 8 === 0 ? 0.62 : 0.35),
+        reward: 35 + n * 9
+      };
+    }
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
     function shuffle(arr) {
       for (let i = arr.length - 1; i > 0; i--) {
@@ -775,7 +956,8 @@
       Object.values(screens).forEach(s => s.classList.remove("active"));
       if (screens[name]) screens[name].classList.add("active");
       $("hud").classList.toggle("active", name === "game");
-      $("touchLayer").classList.toggle("active", name === "game" && isTouchDevice());
+      $("runShop").classList.toggle("active", name === "game");
+      $("touchLayer").classList.remove("active");
       if (name === "title") renderTitleSummary();
       if (name === "upgrades") renderUpgrades();
       if (name === "equipment") renderEquipment();
@@ -787,8 +969,27 @@
       return matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
     }
 
+    function useSideShopLayout() {
+      return W >= 820 && W > H;
+    }
+
+    function shopRect() {
+      if (useSideShopLayout()) {
+        return { x: 0, y: 0, w: Math.min(360, Math.max(280, W * 0.34)), h: H };
+      }
+      const h = Math.min(260, Math.max(190, H * 0.34));
+      return { x: 0, y: H - h, w: W, h };
+    }
+
+    function arenaRect() {
+      const s = shopRect();
+      if (useSideShopLayout()) return { x: s.w, y: 0, w: W - s.w, h: H };
+      return { x: 0, y: 0, w: W, h: H - s.h };
+    }
+
     function playerLaneY() {
-      return clamp(H * 0.72, 230, H - 126);
+      const a = arenaRect();
+      return clamp(a.y + a.h * 0.73, a.y + 160, a.y + a.h - 86);
     }
 
     /* =========================================================
@@ -799,7 +1000,7 @@
       const base = { ...CHARACTERS.knight };
       base.maxHp = base.hp;
       base.coinMult = base.coin;
-      base.projectiles = 1;
+      base.projectiles = 2;
       base.fireLevel = 0;
       base.orbs = 0;
       base.poison = 0;
@@ -816,18 +1017,25 @@
 
     function newGame() {
       const p = buildPlayerStats();
+      const a = arenaRect();
+      const stage = stageConfig(save.stage.selected || 1);
       game = {
         state: "playing",
+        stage,
         t: 0,
+        totalTime: 0,
+        distance: 0,
+        autoSpeed: 120,
         shake: 0,
         spawn: 0,
         fire: 0,
+        shopUiTimer: 0,
         orbAngle: 0,
         idleCoin: 0,
         bossSpawned: false,
         resultReason: "defeat",
         player: {
-          x: W / 2, y: playerLaneY(), r: 14,
+          x: a.x + a.w * 0.26, y: playerLaneY(), r: 14,
           hp: p.hp, maxHp: p.maxHp, speed: p.speed, damage: p.damage,
           fireRate: p.fireRate, projectiles: p.projectiles, crit: p.crit,
           magnet: p.magnet, coinMult: p.coinMult, rare: p.rare,
@@ -840,15 +1048,15 @@
         particles: [],
         texts: [],
         skills: [],
-        runCoins: 0,
+        shopLevels: Object.fromEntries(SKILL_POOL.map(s => [s.id, 0])),
+        runCoins: 24,
         kills: 0,
         damage: 0,
         foundEquipment: []
       };
-      input.keys.clear();
-      input.dashPressed = false;
       lastTime = performance.now();
       showScreen("game");
+      renderRunShop(true);
     }
 
     /* =========================================================
@@ -915,11 +1123,11 @@
     function update(dt) {
       const g = game, p = g.player;
       g.t += dt;
+      g.totalTime += dt;
+      g.distance += g.autoSpeed * dt;
       g.spawn -= dt;
       g.fire -= dt;
       g.orbAngle += dt * 2.7;
-      p.dashCd = Math.max(0, p.dashCd - dt);
-      p.dashTime = Math.max(0, p.dashTime - dt);
       g.shake = Math.max(0, g.shake - dt * 18);
 
       movePlayer(dt);
@@ -932,37 +1140,28 @@
       updateParticles(dt);
       applyAuraDamage(dt);
       updateHud();
+      g.shopUiTimer -= dt;
+      if (g.shopUiTimer <= 0) {
+        renderRunShop(false);
+        g.shopUiTimer = 0.25;
+      }
 
-      if (g.t >= 180 && !g.bossSpawned) spawnBoss();
+      if (g.t >= g.stage.duration && !g.bossSpawned) spawnBoss();
       if (p.hp <= 0) finishRun("defeat");
     }
 
     function movePlayer(dt) {
       const p = game.player;
-      let x = 0;
-      if (input.keys.has("a") || input.keys.has("A") || input.keys.has("ArrowLeft")) x -= 1;
-      if (input.keys.has("d") || input.keys.has("D") || input.keys.has("ArrowRight")) x += 1;
-      if (input.stick.active) x += input.stick.dx;
-      x = clamp(x, -1, 1);
-      if (Math.abs(x) > 0.08) p.lastDir = x > 0 ? 1 : -1;
-
-      if (input.dashPressed && p.dashCd <= 0) {
-        p.dashTime = 0.16;
-        p.dashCd = 1.15;
-        if (Math.abs(x) <= 0.08) x = p.lastDir;
-        game.shake = 3;
-        beep("dash");
-      }
-      input.dashPressed = false;
-
-      const mult = p.dashTime > 0 ? 3.2 : 1;
-      p.x = clamp(p.x + x * p.speed * mult * dt, p.r, W - p.r);
-      p.y = playerLaneY();
+      const a = arenaRect();
+      const targetX = a.x + a.w * 0.26 + Math.sin(game.distance / 180) * 18;
+      p.x += (targetX - p.x) * Math.min(1, dt * 5);
+      p.x = clamp(p.x, a.x + p.r, a.x + a.w * 0.42);
+      p.y = playerLaneY() + Math.sin(game.distance / 55) * 4;
     }
 
     function gainIdleCoin(dt) {
       const g = game, p = g.player;
-      g.idleCoin += dt * (0.45 + g.t / 260) * p.coinMult;
+      g.idleCoin += dt * (1.8 + g.t / 95 + g.stage.n * 0.05) * p.coinMult;
       if (g.idleCoin >= 1) {
         const coins = Math.floor(g.idleCoin);
         g.idleCoin -= coins;
@@ -974,29 +1173,33 @@
     function spawnEnemies() {
       const g = game;
       if (g.spawn > 0) return;
+      if (g.bossSpawned) return;
       const t = g.t;
-      const interval = t < 30 ? 1.05 : t < 60 ? 0.72 : t < 120 ? 0.46 : 0.32;
-      const pack = t < 60 ? 1 : t < 120 ? 2 : 3;
+      const d = g.stage.difficulty;
+      const interval = Math.max(0.16, (t < 18 ? 0.58 : t < 45 ? 0.38 : 0.25) / Math.sqrt(d));
+      const pack = Math.min(10, Math.floor((t < 18 ? 2 : t < 45 ? 4 : 6) * d));
       g.spawn = interval;
+      if (g.enemies.length > 150) return;
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
-        if (t > 45 && roll < 0.34) type = "bat";
-        if (t > 120 && roll < 0.28) type = "brute";
+        if (t > 20 && roll < 0.25) type = "bat";
+        if (t > 45 && roll < 0.16 + Math.min(0.14, (d - 1) * 0.08)) type = "brute";
         spawnEnemy(type);
       }
     }
 
     function spawnEnemy(type) {
       const def = ENEMY_TYPES[type];
+      const a = arenaRect();
       const margin = 34;
-      const edgeRoll = Math.random();
-      const x = edgeRoll < 0.15 ? -margin : edgeRoll > 0.85 ? W + margin : rand(0, W);
-      const y = type === "boss" ? -90 : rand(-100, -margin);
-      const scale = 1 + game.t / 210;
+      const x = a.x + a.w + margin + rand(0, 140);
+      const lane = playerLaneY();
+      const y = type === "boss" ? lane : clamp(lane + rand(-92, 30), a.y + 56, a.y + a.h - 48);
+      const scale = (0.78 + game.t / 330) * game.stage.difficulty;
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * (1 + game.t / 520), damage: def.damage * scale,
+        speed: def.speed * (0.92 + game.t / 780) * Math.sqrt(game.stage.difficulty), damage: def.damage * scale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1004,6 +1207,9 @@
     function spawnBoss() {
       game.bossSpawned = true;
       spawnEnemy("boss");
+      const boss = game.enemies[game.enemies.length - 1];
+      boss.hp *= game.stage.bossHp;
+      boss.maxHp = boss.hp;
       flashToast("BOSS: VAULT TYRANT", "#ff4d69");
       game.shake = 10;
       beep("rare");
@@ -1020,14 +1226,15 @@
       if (!target) return;
       g.fire = 1 / p.fireRate;
       const baseA = Math.atan2(target.y - p.y, target.x - p.x);
-      const count = p.projectiles;
+      const count = Math.max(1, Math.min(18, p.projectiles));
+      const damageScale = Math.max(1, p.projectiles / count);
       for (let i = 0; i < count; i++) {
-        const spread = (i - (count - 1) / 2) * 0.16;
+        const spread = (i - (count - 1) / 2) * 0.12;
         const a = baseA + spread;
         const crit = Math.random() < p.crit;
         g.bullets.push({
           x: p.x, y: p.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520,
-          r: 5, life: 1.15, damage: p.damage * (crit ? 2 : 1), crit, fire: p.fireLevel
+          r: 5, life: 1.15, damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
       beep("shoot");
@@ -1035,12 +1242,13 @@
 
     function updateBullets(dt) {
       const g = game;
+      const a = arenaRect();
       for (let i = g.bullets.length - 1; i >= 0; i--) {
         const b = g.bullets[i];
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         b.life -= dt;
-        if (b.life <= 0 || b.x < -40 || b.x > W + 40 || b.y < -40 || b.y > H + 40) {
+        if (b.life <= 0 || b.x < a.x - 80 || b.x > a.x + a.w + 80 || b.y < a.y - 120 || b.y > a.y + a.h + 80) {
           g.bullets.splice(i, 1);
           continue;
         }
@@ -1058,24 +1266,33 @@
 
     function updateEnemies(dt) {
       const g = game, p = g.player;
+      let touchDamage = 0;
+      const a = arenaRect();
       for (let i = g.enemies.length - 1; i >= 0; i--) {
         const e = g.enemies[i];
+        if (!e) continue;
         const d = len(p.x - e.x, p.y - e.y);
-        e.x += (p.x - e.x) / d * e.speed * dt;
-        e.y += (p.y - e.y) / d * e.speed * dt;
+        e.x -= (e.speed + g.autoSpeed * 0.62) * dt;
+        e.y += (p.y - e.y) / d * e.speed * 0.28 * dt;
         e.hit = Math.max(0, e.hit - dt * 6);
         if (e.burn > 0) {
           e.burn -= dt;
           damageEnemy(e, (4 + p.fireLevel * 2) * dt, "#ff8a4d", false);
         }
         if (d < p.r + e.r) {
-          p.hp -= e.damage * dt;
+          touchDamage += e.damage;
           g.shake = save.settings.shake ? 4 : 0;
         }
-        if (e.hp <= 0) {
+        if (e.x < a.x - 90 && e.type !== "boss") {
+          touchDamage += e.damage * 0.5;
+          g.enemies.splice(i, 1);
+        } else if (e.hp <= 0) {
           killEnemy(e);
           g.enemies.splice(i, 1);
         }
+      }
+      if (touchDamage > 0) {
+        p.hp -= Math.min(touchDamage, 1.6 + g.stage.difficulty * 1.4) * dt;
       }
     }
 
@@ -1088,14 +1305,10 @@
         }
       }
       if (p.orbs > 0) {
-        for (let i = 0; i < p.orbs; i++) {
-          const a = g.orbAngle + i * TAU / p.orbs;
-          const ox = p.x + Math.cos(a) * 55;
-          const oy = p.y + Math.sin(a) * 55;
-          for (const e of g.enemies) {
-            const rr = e.r + 11;
-            if ((e.x - ox) ** 2 + (e.y - oy) ** 2 < rr * rr) damageEnemy(e, 34 * dt, "#54f7ff", false);
-          }
+        const range = 78 + Math.min(80, p.orbs * 2);
+        const orbDamage = (24 + p.orbs * 8) * dt;
+        for (const e of g.enemies) {
+          if (dist2(p, e) < range * range) damageEnemy(e, orbDamage, "#54f7ff", false);
         }
       }
     }
@@ -1116,7 +1329,9 @@
       drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", Math.ceil(def.coin * p.coinMult), "#ffd84d");
       burst(e.x, e.y, def.color, 12);
       beep("kill");
-      if (e.type === "boss") finishRun("victory");
+      if (e.type === "boss") {
+        advanceStage();
+      }
     }
 
     function drop(x, y, kind, value, color) {
@@ -1156,13 +1371,15 @@
       while (p.xp >= p.nextXp) {
         p.xp -= p.nextXp;
         p.level++;
-        p.nextXp = Math.floor(p.nextXp * 1.23 + 12);
-        openLevelUp();
+        p.nextXp = Math.floor(p.nextXp * 1.18 + 14);
+        const bonus = 12 + p.level * 3 + game.stage.floor * 2;
+        game.runCoins += Math.ceil(bonus * p.coinMult);
+        flashToast(`LEVEL ${p.level}  +${bonus}C`, "#54f7ff", 850);
+        beep("level");
       }
     }
 
     function openLevelUp() {
-      game.state = "levelup";
       beep("level");
       flashToast("LEVEL UP", "#54f7ff", 900);
       const choices = shuffle([...SKILL_POOL]).slice(0, 3);
@@ -1174,16 +1391,46 @@
       showScreen("levelUp");
     }
 
-    function chooseSkill(id) {
+    function buyRunSkill(id, amount = 1) {
       const skill = SKILL_POOL.find(s => s.id === id);
-      if (!skill || !game || game.state !== "levelup") return;
-      skill.run(game);
-      game.skills.push(skill.name);
+      if (!skill || !game || game.state !== "playing") return;
+      const levels = Math.max(1, Number(amount) || 1);
+      const cost = runSkillCost(skill, levels);
+      if (game.runCoins < cost) return;
+      game.runCoins -= cost;
+      game.shopLevels[id] = (game.shopLevels[id] || 0) + levels;
+      skill.run(game, levels);
+      game.skills.push(`${skill.name} +${levels}`);
       save.codex.skills[id] = true;
       saveGame();
-      game.state = "playing";
-      showScreen("game");
-      lastTime = performance.now();
+      renderRunShop(true);
+      beep("coin");
+      if (save.settings.damageNumbers) addText(game.player.x, game.player.y - 48, `${skill.name} +${levels}`, "#ffd84d");
+    }
+
+    function runSkillCost(skill, amount = 1) {
+      return skill.cost * Math.max(1, Number(amount) || 1);
+    }
+
+    function advanceStage() {
+      const g = game, p = g.player;
+      const cleared = g.stage.n;
+      g.runCoins += g.stage.reward;
+      save.codex.achievements.boss = true;
+      save.stage.clears[cleared] = true;
+      save.stage.unlocked = Math.max(save.stage.unlocked || 1, cleared + 1);
+      save.stage.selected = save.stage.unlocked;
+      g.stage = stageConfig(cleared + 1);
+      g.t = 0;
+      g.spawn = 0;
+      g.bossSpawned = false;
+      g.enemies.length = 0;
+      g.bullets.length = 0;
+      g.drops.length = 0;
+      p.hp = Math.min(p.maxHp, p.hp + Math.ceil(p.maxHp * 0.28));
+      saveGame();
+      flashToast(`STAGE ${formatStage(cleared)} CLEAR → ${formatStage(g.stage.n)}`, "#ffd84d", 1700);
+      renderRunShop(true);
     }
 
     /* =========================================================
@@ -1253,11 +1500,16 @@
       game.resultReason = reason;
       const coins = game.runCoins;
       save.coins += coins;
-      save.best.time = Math.max(save.best.time, game.t);
+      save.best.time = Math.max(save.best.time, game.totalTime || game.t);
       save.best.kills = Math.max(save.best.kills, game.kills);
       save.best.coins = Math.max(save.best.coins, coins);
-      if (reason === "victory") save.codex.achievements.boss = true;
-      if (game.t >= 60) save.codex.achievements.minute = true;
+      if (reason === "victory") {
+        save.codex.achievements.boss = true;
+        save.stage.clears[game.stage.n] = true;
+        save.stage.unlocked = Math.max(save.stage.unlocked || 1, game.stage.n);
+        save.stage.selected = save.stage.unlocked;
+      }
+      if ((game.totalTime || game.t) >= 60) save.codex.achievements.minute = true;
       if (game.kills >= 100) save.codex.achievements.hunter = true;
       saveGame();
       renderResult();
@@ -1265,12 +1517,13 @@
     }
 
     function renderResult() {
-      $("resultTitle").textContent = game.resultReason === "victory" ? "BOSS DEFEATED" : "RESULT";
+      $("resultTitle").textContent = game.resultReason === "victory" ? `STAGE ${formatStage(game.stage.n)} CLEAR` : "RESULT";
       const eq = game.foundEquipment.length
         ? game.foundEquipment.map(e => `<span class="pill rarity-${e.rarity}">${e.rarity} ${e.name}</span>`).join(" ")
         : "<span class='tiny'>戦闘ドロップなし。装備画面でコイン購入できます。</span>";
       $("resultStats").innerHTML = `
-        <div class="row"><span>生存時間</span><strong>${fmtTime(game.t)}</strong></div>
+        <div class="row"><span>ステージ</span><strong>${formatStage(game.stage.n)}</strong></div>
+        <div class="row"><span>合計時間</span><strong>${fmtTime(game.totalTime || game.t)}</strong></div>
         <div class="row"><span>撃破数</span><strong>${game.kills}</strong></div>
         <div class="row"><span>獲得コイン</span><strong>${game.runCoins}</strong></div>
         <div class="row"><span>獲得装備</span><div>${eq}</div></div>
@@ -1306,16 +1559,17 @@
       ctx.strokeStyle = "rgba(84,247,255,0.08)";
       ctx.lineWidth = 1;
       const step = 48;
-      const ox = game ? -(game.player.x % step) : 0;
-      const oy = game ? -(game.player.y % step) : 0;
-      for (let x = ox; x < W; x += step) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-      for (let y = oy; y < H; y += step) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+      const a = game ? arenaRect() : { x: 0, y: 0, w: W, h: H };
+      const ox = game ? -(game.distance % step) : 0;
+      const oy = game ? -((game.distance * 0.18) % step) : 0;
+      for (let x = a.x + ox; x < a.x + a.w; x += step) { ctx.beginPath(); ctx.moveTo(x, a.y); ctx.lineTo(x, a.y + a.h); ctx.stroke(); }
+      for (let y = a.y + oy; y < a.y + a.h; y += step) { ctx.beginPath(); ctx.moveTo(a.x, y); ctx.lineTo(a.x + a.w, y); ctx.stroke(); }
       if (game) {
         ctx.strokeStyle = "rgba(255,216,77,0.24)";
         ctx.setLineDash([10, 12]);
         ctx.beginPath();
-        ctx.moveTo(0, playerLaneY() + 24);
-        ctx.lineTo(W, playerLaneY() + 24);
+        ctx.moveTo(a.x, playerLaneY() + 24);
+        ctx.lineTo(a.x + a.w, playerLaneY() + 24);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -1341,8 +1595,9 @@
         circle(p.x, p.y, 70 + p.poison * 15, "#9dff58", true);
         ctx.globalAlpha = 1;
       }
-      for (let i = 0; i < p.orbs; i++) {
-        const a = game.orbAngle + i * TAU / p.orbs;
+      const visibleOrbs = Math.min(18, p.orbs);
+      for (let i = 0; i < visibleOrbs; i++) {
+        const a = game.orbAngle + i * TAU / visibleOrbs;
         circle(p.x + Math.cos(a) * 55, p.y + Math.sin(a) * 55, 10, "#54f7ff", true);
       }
       ctx.shadowBlur = 18;
@@ -1460,16 +1715,60 @@
       $("hpBar").style.width = `${clamp(p.hp / p.maxHp, 0, 1) * 100}%`;
       $("xpText").textContent = `Lv.${p.level}`;
       $("xpBar").style.width = `${clamp(p.xp / p.nextXp, 0, 1) * 100}%`;
-      $("timeText").textContent = fmtTime(game.t);
+      $("timeText").textContent = `${formatStage(game.stage.n)} ${fmtTime(Math.max(0, game.stage.duration - game.t))}`;
       $("runCoinText").textContent = game.runCoins;
       $("killText").textContent = `${game.kills} KOs`;
       const skills = game.skills.slice(-9).map(s => `<span class="pill">${s}</span>`).join("");
-      $("skillList").innerHTML = skills || "<span class='tiny'>レベルアップでスキルを獲得</span>";
+      $("skillList").innerHTML = skills || "<span class='tiny'>左の購入パネルで強化</span>";
     }
 
     /* =========================================================
        メニュー描画
        ========================================================= */
+    function renderRunShop(forceList = false) {
+      if (!game) return;
+      const remaining = Math.max(0, game.stage.duration - game.t);
+      $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
+      $("stageInfo").textContent = game.bossSpawned
+        ? "ボス出現中。倒すと次のステージへ"
+        : `ボスまで ${fmtTime(remaining)} / ステージは無限`;
+      $("shopCoinText").textContent = `${game.runCoins}C`;
+      const list = $("runShopItems");
+      if (!forceList && list.children.length === SKILL_POOL.length) {
+        SKILL_POOL.forEach(skill => {
+          const row = list.querySelector(`[data-skill-row="${skill.id}"]`);
+          if (!row) return;
+          const lvEl = row.querySelector(".skill-lv");
+          if (lvEl) lvEl.textContent = `Lv.${game.shopLevels[skill.id] || 0}`;
+          row.querySelectorAll("[data-skill]").forEach(btn => {
+            const amount = Number(btn.dataset.amount || 1);
+            const cost = runSkillCost(skill, amount);
+            const can = game.runCoins >= cost;
+            btn.classList.toggle("primary", can);
+            btn.classList.toggle("disabled", !can);
+            btn.textContent = `+${amount} ${cost}C`;
+          });
+        });
+        return;
+      }
+      list.innerHTML = SKILL_POOL.map(skill => {
+        const lv = game.shopLevels[skill.id] || 0;
+        const buttons = [1, 10, 100].map(amount => {
+          const cost = runSkillCost(skill, amount);
+          const can = game.runCoins >= cost;
+          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-skill="${skill.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+        }).join("");
+        return `
+          <div class="shop-buy" data-skill-row="${skill.id}">
+            <span>
+              <strong>${skill.name} <span class="skill-lv">Lv.${lv}</span></strong>
+              <span class="tiny">${skill.desc}</span>
+            </span>
+            <div class="shop-actions">${buttons}</div>
+          </div>`;
+      }).join("");
+    }
+
     function renderTitleSummary() {
       $("saveSummary").innerHTML = `
         所持コイン: <b>${save.coins}</b><br>
@@ -1479,40 +1778,47 @@
       `;
       const c = CHARACTERS.knight;
       $("charSummary").innerHTML = `${c.name}<br>高いHPで、左右移動だけの放置寄りバトルに向いた最初のキャラクターです。`;
+      const selected = save.stage.selected || 1;
+      $("stageSummary").innerHTML = `
+        選択中: <b>${formatStage(selected)}</b><br>
+        解放済み: <b>${formatStage(save.stage.unlocked || 1)}</b><br>
+        ステージ: <b>無限</b><br>
+        クリア済み: <b>${Object.keys(save.stage.clears || {}).length}</b>
+      `;
     }
 
     function renderUpgrades() {
       $("upgradeList").innerHTML = `<div class="row"><strong>所持コイン</strong><span class="pill">${save.coins}</span></div>` +
         UPGRADE_DEFS.map(u => {
           const lv = save.upgrades[u.id] || 0;
-          const cost = upgradeCost(u, lv);
-          const maxed = lv >= u.max;
-          const can = save.coins >= cost && !maxed;
+          const buttons = [1, 10, 100].map(amount => {
+            const cost = upgradeCost(u, amount);
+            const can = save.coins >= cost;
+            return `<button class="${can ? "primary" : "disabled"}" data-upgrade="${u.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+          }).join("");
           return `
             <div class="row">
               <div>
                 <h3>${u.name}</h3>
-                <p class="tiny">${u.desc} / Lv.${lv} / ${u.max}</p>
+                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 固定単価 ${u.baseCost}C</p>
               </div>
-              <button class="${can ? "primary" : "disabled"}" data-upgrade="${u.id}">
-                ${maxed ? "MAX" : cost + "C 強化"}
-              </button>
+              <div class="equip-actions">${buttons}</div>
             </div>`;
         }).join("");
     }
 
-    function upgradeCost(u, lv) {
-      return Math.floor(u.baseCost * Math.pow(1.34, lv));
+    function upgradeCost(u, amount = 1) {
+      return u.baseCost * Math.max(1, Number(amount) || 1);
     }
 
-    function buyUpgrade(id) {
+    function buyUpgrade(id, amount = 1) {
       const u = UPGRADE_DEFS.find(x => x.id === id);
       if (!u) return;
-      const lv = save.upgrades[id] || 0;
-      const cost = upgradeCost(u, lv);
-      if (lv >= u.max || save.coins < cost) return;
+      const levels = Math.max(1, Number(amount) || 1);
+      const cost = upgradeCost(u, levels);
+      if (save.coins < cost) return;
       save.coins -= cost;
-      save.upgrades[id] = lv + 1;
+      save.upgrades[id] = (save.upgrades[id] || 0) + levels;
       saveGame();
       renderUpgrades();
       beep("coin");
@@ -1588,6 +1894,12 @@
         ["hunter", "100体撃破"],
         ["boss", "ボス撃破"]
       ].map(([id, name]) => `<div class="row"><span>${name}</span><span class="pill">${save.codex.achievements[id] ? "達成" : "未達成"}</span></div>`).join("");
+      const stageCount = Math.max(8, Math.min((save.stage.unlocked || 1) + 7, 80));
+      const stageRows = Array.from({ length: stageCount }, (_, i) => i + 1).map(n => {
+        const unlocked = n <= (save.stage.unlocked || 1);
+        const clear = save.stage.clears && save.stage.clears[n];
+        return `<div class="row"><span>Stage ${formatStage(n)}</span><span class="pill">${clear ? "CLEAR" : unlocked ? "解放" : "未解放"}</span></div>`;
+      }).join("");
       $("codexList").innerHTML = `
         <div class="two-col">
           <div><h3>敵</h3>${enemyRows}</div>
@@ -1596,7 +1908,7 @@
         <div style="height:12px"></div>
         <div class="two-col">
           <div><h3>スキル</h3>${skillRows}</div>
-          <div><h3>実績</h3>${ach}</div>
+          <div><h3>実績</h3>${ach}<h3 style="margin-top:12px;">ステージ</h3>${stageRows}</div>
         </div>`;
     }
 
@@ -1618,6 +1930,13 @@
       save.settings[id] = !save.settings[id];
       saveGame();
       renderSettings();
+    }
+
+    function changeStage(step) {
+      const unlocked = save.stage.unlocked || 1;
+      save.stage.selected = clamp((save.stage.selected || 1) + step, 1, unlocked);
+      saveGame();
+      renderTitleSummary();
     }
 
     function resetSave() {
@@ -1655,12 +1974,13 @@
       if (action === "codex") showScreen("codex");
       if (action === "settings") showScreen("settings");
       if (action === "reset") resetSave();
-      if (el.dataset.skill) chooseSkill(el.dataset.skill);
-      if (el.dataset.upgrade) buyUpgrade(el.dataset.upgrade);
+      if (el.dataset.skill) buyRunSkill(el.dataset.skill, Number(el.dataset.amount || 1));
+      if (el.dataset.upgrade) buyUpgrade(el.dataset.upgrade, Number(el.dataset.amount || 1));
       if (el.dataset.buyEquip) buyEquipmentPack(el.dataset.buyEquip);
       if (el.dataset.equip) equipItem(el.dataset.equip);
       if (el.dataset.sell) sellItem(el.dataset.sell);
       if (el.dataset.setting) toggleSetting(el.dataset.setting);
+      if (el.dataset.stageStep) changeStage(Number(el.dataset.stageStep));
     }
 
     document.addEventListener("pointerup", activateButton);
