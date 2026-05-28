@@ -1,4 +1,4 @@
-<!doctype html>
+ <!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -740,7 +740,6 @@
     const UPGRADE_DEFS = [
       { id: "hp", name: "初期HPアップ", baseCost: 45, desc: "最大HP +8", apply: (s, lv) => s.hp += lv * 8 },
       { id: "damage", name: "初期攻撃力アップ", baseCost: 55, desc: "攻撃力 +5%", apply: (s, lv) => s.damage *= 1 + lv * 0.05 },
-      { id: "speed", name: "初期移動速度アップ", baseCost: 50, desc: "移動速度 +2.5%", apply: (s, lv) => s.speed *= 1 + lv * 0.025 },
       { id: "coin", name: "コイン獲得倍率アップ", baseCost: 60, desc: "コイン +5%", apply: (s, lv) => s.coin *= 1 + lv * 0.05 },
       { id: "rare", name: "高レア購入率アップ", baseCost: 75, desc: "ショップ高レア率 +0.6%", apply: (s, lv) => s.rare += lv * 0.006 },
       { id: "magnet", name: "初期経験値取得範囲アップ", baseCost: 45, desc: "取得範囲 +8", apply: (s, lv) => s.magnet += lv * 8 }
@@ -750,7 +749,6 @@
       { id: "atk", name: "攻撃力アップ", desc: "弾のダメージ +18%", cost: 12, run: (g, n = 1) => g.player.damage *= Math.pow(1.18, n) },
       { id: "rate", name: "攻撃速度アップ", desc: "自動攻撃の間隔を短縮", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.14, n) },
       { id: "multi", name: "弾数アップ", desc: "同時に撃つ弾 +1", cost: 42, run: (g, n = 1) => g.player.projectiles += n },
-      { id: "move", name: "オート前進アップ", desc: "横スクロール速度 +8%", cost: 10, run: (g, n = 1) => g.autoSpeed *= Math.pow(1.08, n) },
       { id: "maxhp", name: "最大HPアップ", desc: "最大HP +28 / 少し回復", cost: 18, run: (g, n = 1) => { g.player.maxHp += 28 * n; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 28 * n); } },
       { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +18%", cost: 16, run: (g, n = 1) => g.player.coinMult *= Math.pow(1.18, n) },
       { id: "magnet", name: "自動回収アップ", desc: "ジェムとコインをより早く回収", cost: 12, run: (g, n = 1) => g.player.magnet += 65 * n },
@@ -821,6 +819,7 @@
       return {
         coins: 0,
         upgrades: Object.fromEntries(UPGRADE_DEFS.map(u => [u.id, 0])),
+        runUpgrades: Object.fromEntries(SKILL_POOL.map(s => [s.id, 0])),
         equipment: [],
         equippedId: null,
         codex: { enemies: {}, rarities: {}, skills: {}, achievements: {} },
@@ -838,10 +837,19 @@
         if (!raw) return defaultSave();
         const data = JSON.parse(raw);
         const d = defaultSave();
+        const upgrades = { ...d.upgrades };
+        Object.entries(data.upgrades || {}).forEach(([id, lv]) => {
+          if (id in upgrades) upgrades[id] = lv;
+        });
+        const runUpgrades = { ...d.runUpgrades };
+        Object.entries(data.runUpgrades || {}).forEach(([id, lv]) => {
+          if (id in runUpgrades) runUpgrades[id] = lv;
+        });
         return {
           ...d,
           ...data,
-          upgrades: { ...d.upgrades, ...(data.upgrades || {}) },
+          upgrades,
+          runUpgrades,
           codex: { ...d.codex, ...(data.codex || {}) },
           best: { ...d.best, ...(data.best || {}) },
           stage: { ...d.stage, ...(data.stage || {}), clears: { ...d.stage.clears, ...((data.stage && data.stage.clears) || {}) } },
@@ -931,14 +939,15 @@
     function stageConfig(n) {
       const world = Math.floor((n - 1) / 8) + 1;
       const floor = ((n - 1) % 8) + 1;
-      const late = n >= 17 ? 1 + (n - 16) * 0.18 : 1;
-      const endlessRamp = 1 + Math.max(0, n - 24) * 0.09;
-      const bossWall = n % 8 === 0 ? 1.8 : 1;
-      const difficulty = (1 + (world - 1) * 0.42 + (floor - 1) * 0.075) * late * endlessRamp * bossWall;
+      const late = n >= 17 ? 1 + (n - 16) * 0.24 : 1;
+      const endlessRamp = 1 + Math.max(0, n - 24) * 0.13;
+      const bossWall = n % 8 === 0 ? 2.15 : 1;
+      const baseDifficulty = 1 + (world - 1) * 0.54 + (floor - 1) * 0.105;
+      const difficulty = baseDifficulty * late * endlessRamp * bossWall * 1.22;
       return {
         n, world, floor, difficulty,
-        duration: 42 + Math.min(24, (world - 1) * 4 + floor * 1.3),
-        bossHp: 0.86 + difficulty * (n % 8 === 0 ? 0.62 : 0.35),
+        duration: 36 + Math.min(20, (world - 1) * 3.2 + floor * 1.05),
+        bossHp: 1.15 + difficulty * (n % 8 === 0 ? 0.78 : 0.48),
         reward: 35 + n * 9
       };
     }
@@ -1048,15 +1057,32 @@
         particles: [],
         texts: [],
         skills: [],
-        shopLevels: Object.fromEntries(SKILL_POOL.map(s => [s.id, 0])),
-        runCoins: 24,
+        shopLevels: Object.fromEntries(SKILL_POOL.map(s => [s.id, save.runUpgrades[s.id] || 0])),
+        runCoins: Math.max(0, Math.floor(save.coins || 0)),
+        coinsEarned: 0,
         kills: 0,
         damage: 0,
         foundEquipment: []
       };
+      applySavedRunUpgrades(game);
       lastTime = performance.now();
       showScreen("game");
       renderRunShop(true);
+    }
+
+    function applySavedRunUpgrades(g) {
+      SKILL_POOL.forEach(skill => {
+        const lv = save.runUpgrades[skill.id] || 0;
+        if (lv <= 0) return;
+        skill.run(g, lv);
+        g.skills.push(`${skill.name} +${lv}`);
+      });
+    }
+
+    function syncRunCoins() {
+      if (!game) return;
+      save.coins = Math.max(0, Math.floor(game.runCoins || 0));
+      saveGame();
     }
 
     /* =========================================================
@@ -1166,6 +1192,8 @@
         const coins = Math.floor(g.idleCoin);
         g.idleCoin -= coins;
         g.runCoins += coins;
+        g.coinsEarned += coins;
+        syncRunCoins();
         if (save.settings.damageNumbers) addText(p.x, p.y - 34, "+" + coins + "C", "#ffd84d");
       }
     }
@@ -1176,15 +1204,15 @@
       if (g.bossSpawned) return;
       const t = g.t;
       const d = g.stage.difficulty;
-      const interval = Math.max(0.16, (t < 18 ? 0.58 : t < 45 ? 0.38 : 0.25) / Math.sqrt(d));
-      const pack = Math.min(10, Math.floor((t < 18 ? 2 : t < 45 ? 4 : 6) * d));
+      const interval = Math.max(0.11, (t < 14 ? 0.46 : t < 34 ? 0.29 : 0.19) / Math.sqrt(d));
+      const pack = Math.min(16, Math.floor((t < 14 ? 3 : t < 34 ? 5 : 8) * d));
       g.spawn = interval;
-      if (g.enemies.length > 150) return;
+      if (g.enemies.length > 220) return;
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
-        if (t > 20 && roll < 0.25) type = "bat";
-        if (t > 45 && roll < 0.16 + Math.min(0.14, (d - 1) * 0.08)) type = "brute";
+        if (t > 12 && roll < 0.34) type = "bat";
+        if (t > 30 && roll < 0.23 + Math.min(0.18, (d - 1) * 0.1)) type = "brute";
         spawnEnemy(type);
       }
     }
@@ -1195,11 +1223,12 @@
       const margin = 34;
       const x = a.x + a.w + margin + rand(0, 140);
       const lane = playerLaneY();
-      const y = type === "boss" ? lane : clamp(lane + rand(-92, 30), a.y + 56, a.y + a.h - 48);
-      const scale = (0.78 + game.t / 330) * game.stage.difficulty;
+      const y = type === "boss" ? lane : clamp(lane + rand(-100, 38), a.y + 56, a.y + a.h - 48);
+      const scale = (1.05 + game.t / 245) * game.stage.difficulty;
+      const speedScale = (1.08 + game.t / 620) * Math.sqrt(game.stage.difficulty);
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * (0.92 + game.t / 780) * Math.sqrt(game.stage.difficulty), damage: def.damage * scale,
+        speed: def.speed * speedScale, damage: def.damage * scale * 1.12,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1208,7 +1237,7 @@
       game.bossSpawned = true;
       spawnEnemy("boss");
       const boss = game.enemies[game.enemies.length - 1];
-      boss.hp *= game.stage.bossHp;
+      boss.hp *= game.stage.bossHp * 1.18;
       boss.maxHp = boss.hp;
       flashToast("BOSS: VAULT TYRANT", "#ff4d69");
       game.shake = 10;
@@ -1284,7 +1313,7 @@
           g.shake = save.settings.shake ? 4 : 0;
         }
         if (e.x < a.x - 90 && e.type !== "boss") {
-          touchDamage += e.damage * 0.5;
+          touchDamage += e.damage * 0.72;
           g.enemies.splice(i, 1);
         } else if (e.hp <= 0) {
           killEnemy(e);
@@ -1292,16 +1321,25 @@
         }
       }
       if (touchDamage > 0) {
-        p.hp -= Math.min(touchDamage, 1.6 + g.stage.difficulty * 1.4) * dt;
+        p.hp -= Math.min(touchDamage, 2.4 + g.stage.difficulty * 2.15) * dt;
       }
+    }
+
+    function poisonAuraRange(p) {
+      return 85 + Math.min(135, p.poison * 18);
+    }
+
+    function poisonAuraDps(p) {
+      return p.damage * (0.18 + p.poison * 0.07);
     }
 
     function applyAuraDamage(dt) {
       const g = game, p = g.player;
       if (p.poison > 0) {
-        const range = 70 + p.poison * 15;
+        const range = poisonAuraRange(p);
+        const poisonDamage = poisonAuraDps(p) * dt;
         for (const e of g.enemies) {
-          if (dist2(p, e) < range * range) damageEnemy(e, (10 + p.poison * 5) * dt, "#9dff58", false);
+          if (dist2(p, e) < range * range) damageEnemy(e, poisonDamage, "#9dff58", false);
         }
       }
       if (p.orbs > 0) {
@@ -1357,6 +1395,8 @@
           if (d.kind === "xp") gainXp(d.value);
           if (d.kind === "coin") {
             g.runCoins += d.value;
+            g.coinsEarned += d.value;
+            syncRunCoins();
             addText(p.x, p.y - 22, "+" + d.value, "#ffd84d");
             beep("coin");
           }
@@ -1373,8 +1413,11 @@
         p.level++;
         p.nextXp = Math.floor(p.nextXp * 1.18 + 14);
         const bonus = 12 + p.level * 3 + game.stage.floor * 2;
-        game.runCoins += Math.ceil(bonus * p.coinMult);
-        flashToast(`LEVEL ${p.level}  +${bonus}C`, "#54f7ff", 850);
+        const earned = Math.ceil(bonus * p.coinMult);
+        game.runCoins += earned;
+        game.coinsEarned += earned;
+        syncRunCoins();
+        flashToast(`LEVEL ${p.level}  +${earned}C`, "#54f7ff", 850);
         beep("level");
       }
     }
@@ -1399,10 +1442,11 @@
       if (game.runCoins < cost) return;
       game.runCoins -= cost;
       game.shopLevels[id] = (game.shopLevels[id] || 0) + levels;
+      save.runUpgrades[id] = (save.runUpgrades[id] || 0) + levels;
       skill.run(game, levels);
       game.skills.push(`${skill.name} +${levels}`);
       save.codex.skills[id] = true;
-      saveGame();
+      syncRunCoins();
       renderRunShop(true);
       beep("coin");
       if (save.settings.damageNumbers) addText(game.player.x, game.player.y - 48, `${skill.name} +${levels}`, "#ffd84d");
@@ -1416,6 +1460,8 @@
       const g = game, p = g.player;
       const cleared = g.stage.n;
       g.runCoins += g.stage.reward;
+      g.coinsEarned += g.stage.reward;
+      syncRunCoins();
       save.codex.achievements.boss = true;
       save.stage.clears[cleared] = true;
       save.stage.unlocked = Math.max(save.stage.unlocked || 1, cleared + 1);
@@ -1498,8 +1544,8 @@
       if (!game || game.state === "finished") return;
       game.state = "finished";
       game.resultReason = reason;
-      const coins = game.runCoins;
-      save.coins += coins;
+      const coins = game.coinsEarned || 0;
+      save.coins = Math.max(0, Math.floor(game.runCoins || 0));
       save.best.time = Math.max(save.best.time, game.totalTime || game.t);
       save.best.kills = Math.max(save.best.kills, game.kills);
       save.best.coins = Math.max(save.best.coins, coins);
@@ -1525,7 +1571,8 @@
         <div class="row"><span>ステージ</span><strong>${formatStage(game.stage.n)}</strong></div>
         <div class="row"><span>合計時間</span><strong>${fmtTime(game.totalTime || game.t)}</strong></div>
         <div class="row"><span>撃破数</span><strong>${game.kills}</strong></div>
-        <div class="row"><span>獲得コイン</span><strong>${game.runCoins}</strong></div>
+        <div class="row"><span>獲得コイン</span><strong>${game.coinsEarned || 0}</strong></div>
+        <div class="row"><span>現在の保存コイン</span><strong>${game.runCoins}</strong></div>
         <div class="row"><span>獲得装備</span><div>${eq}</div></div>
         <div class="row"><span>合計ダメージ</span><strong>${Math.round(game.damage)}</strong></div>
       `;
@@ -1592,7 +1639,7 @@
       const p = game.player;
       if (p.poison > 0) {
         ctx.globalAlpha = 0.13;
-        circle(p.x, p.y, 70 + p.poison * 15, "#9dff58", true);
+        circle(p.x, p.y, poisonAuraRange(p), "#9dff58", true);
         ctx.globalAlpha = 1;
       }
       const visibleOrbs = Math.min(18, p.orbs);
@@ -1774,7 +1821,8 @@
         所持コイン: <b>${save.coins}</b><br>
         最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
         最高撃破数: <b>${save.best.kills}</b><br>
-        所持装備: <b>${save.equipment.length}</b>
+        所持装備: <b>${save.equipment.length}</b><br>
+        保存済み戦闘強化Lv合計: <b>${Object.values(save.runUpgrades || {}).reduce((a, b) => a + b, 0)}</b>
       `;
       const c = CHARACTERS.knight;
       $("charSummary").innerHTML = `${c.name}<br>高いHPで、左右移動だけの放置寄りバトルに向いた最初のキャラクターです。`;
