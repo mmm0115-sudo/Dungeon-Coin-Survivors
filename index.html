@@ -651,8 +651,8 @@
       <div class="menu">
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
-          <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.0</div>
+          <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
+          <div class="version-badge" id="versionText">v0.10.1</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,13 +766,13 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.0";
+    const APP_VERSION = "v0.10.1";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
-    const MAX_BULLETS = 150;
+    const MAX_BULLETS = 360;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
-    const MAX_VISIBLE_FACILITIES = 12;
+    const MAX_VISIBLE_FACILITIES = 6;
     const MAX_FACILITY_VOLLEY = 32;
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
@@ -880,7 +880,7 @@
       { id: "multiLauncher", name: "連装ボルト射出装置", unlockStage: 2, baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
       { id: "aimAssist", name: "射撃制御装置", unlockStage: 2, baseCost: 155, desc: "弾のばらつきを減らし、攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
       { id: "coinVacuum", name: "コイン吸引装置", unlockStage: 2, baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
-      { id: "towerCore", name: "施設砲台増設", unlockStage: 3, baseCost: 220, desc: "Lvごとに施設 +1 / 後方部隊として全台が攻撃", apply: (p, lv) => { p.facilityCount += lv; p.facilityDamage *= Math.pow(1.08, lv); } },
+      { id: "towerCore", name: "施設砲台増設", unlockStage: 3, baseCost: 220, desc: "Lvごとに砲台 +1 / 最大6台 / 全弾表示", apply: (p, lv) => { const n = Math.min(6, lv); p.facilityCount += n; p.facilityDamage *= Math.pow(1.04, n); } },
       { id: "towerRate", name: "施設連射機構", unlockStage: 3, baseCost: 260, desc: "施設の連射速度アップ", apply: (p, lv) => p.facilityRate *= Math.pow(1.08, lv) },
       { id: "repairUnit", name: "自動修復装置", unlockStage: 3, baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
       { id: "stormRegulator", name: "雷珠制御装置", unlockStage: 4, baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
@@ -1139,9 +1139,7 @@
       if (!g || !facilitiesUnlocked(g.stage.n)) return "施設: Stage 1-3で解放";
       const p = g.player;
       const total = totalFacilityCount(g);
-      const hidden = Math.max(0, total - visibleFacilityCount(g));
-      const reserve = hidden ? ` / 後方${formatStat(hidden)}基` : "";
-      return `施設${formatStat(total)}基${reserve} / 威力x${(p.facilityDamage || 1).toFixed(1)} / 連射x${(p.facilityRate || 1).toFixed(1)}`;
+      return `砲台${formatStat(total)} / 6台 / 各砲台が${volleyCountFor(p)}発 / 全弾表示`;
     }
     function bossHpText(g = game) {
       if (!g) return "BOSS HP --";
@@ -1189,7 +1187,7 @@
       if (screens[name]) screens[name].classList.add("active");
       $("hud").classList.toggle("active", name === "game");
       $("runShop").classList.toggle("active", name === "game");
-      $("touchLayer").classList.toggle("active", name === "game" && isTouchDevice());
+      $("touchLayer").classList.toggle("active", false);
       if (name === "title") renderTitleSummary();
       if (name === "upgrades") renderUpgrades();
       if (name === "equipment") renderEquipment();
@@ -1266,7 +1264,7 @@
       player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
       player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
       player.bulletSpeedBonus = Math.min(40, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
-      player.facilityCount = Math.min(1000000, Math.max(0, safeLevel(player.facilityCount || 0)));
+      player.facilityCount = Math.min(6, Math.max(0, safeLevel(player.facilityCount || 0)));
       player.facilityDamage = Math.min(1e20, Math.max(1, safeNumber(player.facilityDamage, 1)));
       player.facilityRate = Math.min(60, Math.max(1, safeNumber(player.facilityRate, 1)));
     }
@@ -1457,7 +1455,6 @@
       autoAttack(dt);
       updateLasers(dt);
       updateBullets(dt);
-      updateBossPressure(dt);
       updateEnemies(dt);
       updateDrops(dt);
       updateParticles(dt);
@@ -1484,31 +1481,10 @@
     function movePlayer(dt) {
       const p = game.player;
       const a = arenaRect();
-      if (game.bossSpawned && game.bossFreeze) {
-        p.dashCd = Math.max(0, p.dashCd - dt);
-        p.dashTime = 0;
-        p.x = clamp(game.bossFreeze.x, a.x + p.r, a.x + a.w - p.r);
-        p.y = game.bossFreeze.y;
-        input.dashPressed = false;
-        return;
-      }
       p.dashCd = Math.max(0, p.dashCd - dt);
-      p.dashTime = Math.max(0, p.dashTime - dt);
-      const axis = movementAxis();
-      if (axis !== 0) p.lastDir = Math.sign(axis);
-      if (input.dashPressed && p.dashCd <= 0) {
-        p.dashTime = 0.16;
-        p.dashCd = 1.15;
-        game.shake = save.settings.shake ? 3 : 0;
-        beep("dash");
-      }
+      p.dashTime = 0;
       input.dashPressed = false;
-
-      if (axis !== 0) {
-        const dashBoost = p.dashTime > 0 ? 2.75 : 1;
-        p.x += axis * p.speed * dashBoost * dt;
-      }
-      p.x = clamp(p.x, a.x + p.r, a.x + a.w - p.r);
+      p.x = clamp(laneX(1, a), a.x + p.r, a.x + a.w - p.r);
       p.y = playerLaneY();
     }
 
@@ -1624,19 +1600,10 @@
       const laserDps = p.laserLevel > 0 ? p.damage * (1.2 + p.laserLevel * 0.09) / laserCd : 0;
       const facilitySlotsCount = totalFacilityCount(g);
       const facilityDps = facilitiesUnlocked(g.stage.n)
-        ? facilitySlotsCount * facilityShotDamage(p) * facilityEffectiveRate(p) / 1.15
+        ? facilitySlotsCount * volleyCountFor(p) * facilityShotDamage(p) * facilityEffectiveRate(p) * (1 + p.crit)
         : 0;
       const auraDps = (p.poison || 0) * p.damage * 0.045 + (p.orbs || 0) * 5.8 * (p.orbDamageMult || 1);
       return Math.max(80, (bulletDps + laserDps + facilityDps + auraDps) * 0.78);
-    }
-
-    function updateBossPressure(dt) {
-      const g = game;
-      if (!g || !g.bossSpawned) return;
-      const boss = g.enemies.find(e => e.type === "boss" && e.hp > 0);
-      if (!boss) return;
-      const upgradeBonus = Math.min(0.42, Math.sqrt(upgradePressure(g)) * 0.012);
-      damageBossRatio(boss, (0.86 + upgradeBonus) * dt / BOSS_TARGET_SECONDS);
     }
 
     function updateBossAttacks(dt) {
@@ -1703,7 +1670,7 @@
 
     function totalFacilityCount(g = game) {
       if (!g || !facilitiesUnlocked(g.stage.n)) return 0;
-      return Math.max(0, safeLevel(g.player.facilityCount || 0));
+      return Math.min(6, Math.max(0, safeLevel(g.player.facilityCount || 0)));
     }
 
     function visibleFacilityCount(g = game) {
@@ -1714,48 +1681,41 @@
       if (!g || !facilitiesUnlocked(g.stage.n)) return [];
       const p = g.player;
       const a = arenaRect();
-      const lanes = laneCenters(a);
       const count = visibleFacilityCount(g);
       if (count <= 0) return [];
-      const rows = Math.ceil(count / 3);
-      const baseY = Math.min(playerLaneY() + 30, a.y + a.h - 36);
+      const centerX = clamp(p.x || laneX(1, a), a.x + 70, a.x + a.w - 70);
+      const centerY = playerLaneY();
+      const formation = [
+        { x: 0, y: -68, lane: 1 },
+        { x: -62, y: -48, lane: 0 },
+        { x: 62, y: -48, lane: 2 },
+        { x: 0, y: 62, lane: 1 },
+        { x: -62, y: 42, lane: 0 },
+        { x: 62, y: 42, lane: 2 }
+      ];
       return Array.from({ length: count }, (_, i) => {
-        const row = Math.floor(i / 3);
-        const lane = i % 3;
-        const rowOffset = rows <= 1 ? 0 : (rows - 1 - row) * 20;
+        const pos = formation[i];
         return {
-          lane,
-          x: lanes[lane] || lanes[1],
-          y: baseY - rowOffset,
-          row
+          lane: pos.lane,
+          x: clamp(centerX + pos.x, a.x + 26, a.x + a.w - 26),
+          y: clamp(centerY + pos.y, a.y + 34, a.y + a.h - 26),
+          row: pos.y > 0 ? 1 : 0
         };
       });
     }
 
     function facilityEffectiveRate(p) {
-      const fireRateBoost = Math.sqrt(Math.max(1, safeNumber(p.fireRate, 1) / CHARACTERS.knight.fireRate));
-      return Math.max(1, (p.facilityRate || 1) * fireRateBoost);
+      return Math.max(0.1, safeNumber(p.fireRate, 1) * (p.facilityRate || 1));
     }
 
     function facilityShotDamage(p) {
-      const projectileBoost = 1 + Math.max(0, safeLevel(p.projectiles || 1) - 2) * 0.035;
       const fireBoost = 1 + Math.min(3, safeLevel(p.fireLevel || 0) * 0.015);
-      const critBoost = 1 + Math.min(0.85, safeNumber(p.crit, 0));
-      return p.damage * 0.55 * (p.facilityDamage || 1) * projectileBoost * fireBoost * critBoost;
+      return p.damage * (p.facilityDamage || 1) * fireBoost;
     }
 
     function volleyCountFor(p, room = Infinity) {
       const roomLimit = Number.isFinite(room) ? safeLevel(room) : 32;
       return Math.max(1, Math.min(32, safeLevel(p.projectiles || 1), roomLimit));
-    }
-
-    function symmetricFacilitySlot(slots, offset, index) {
-      const lane = offset < -0.01 ? 0 : offset > 0.01 ? 2 : 1;
-      const laneSlots = slots.filter(slot => slot.lane === lane);
-      if (laneSlots.length) return laneSlots[index % laneSlots.length];
-      const centerSlots = slots.filter(slot => slot.lane === 1);
-      if (centerSlots.length) return centerSlots[index % centerSlots.length];
-      return slots[index % slots.length];
     }
 
     function updateFacilities(dt) {
@@ -1769,37 +1729,39 @@
       if (g.bullets.length >= MAX_BULLETS) return;
 
       const room = Math.max(0, MAX_BULLETS - g.bullets.length);
-      const shotCount = Math.min(MAX_FACILITY_VOLLEY, volleyCountFor(p, room));
-      if (shotCount <= 0) return;
-      const squadScale = Math.max(1, total / shotCount);
-      const damage = facilityShotDamage(p) * squadScale;
+      const volleyCount = Math.min(MAX_FACILITY_VOLLEY, volleyCountFor(p));
+      const needed = Math.min(room, total * volleyCount);
+      if (needed <= 0) return;
+      const damage = facilityShotDamage(p);
       const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
       let fired = 0;
       const fallbackTarget = facilityTarget(slots.find(slot => slot.lane === 1) || slots[0]);
-      for (let i = 0; i < shotCount; i++) {
-        const offset = i - (shotCount - 1) / 2;
-        const slot = symmetricFacilitySlot(slots, offset, i);
+      for (const slot of slots) {
         const target = facilityTarget(slot) || fallbackTarget;
-        if (!target || g.bullets.length >= MAX_BULLETS) continue;
-        const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
-        const aim = predictedAimPoint(target, lead);
-        const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
-        const jitter = offset * shotSpreadStep(p) * 0.5 * (1 - aimAssist);
-        const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
-        const crit = Math.random() < p.crit;
-        g.bullets.push({
-          x: slot.x + clamp(offset, -5, 5) * 3,
-          y: slot.y - 32 - Math.abs(offset) * 0.28,
-          vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 7, life: 2.8, age: 0, speed, facility: true,
-          bossPierce: target.type === "boss",
-          damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
-        });
-        fired++;
+        if (!target) continue;
+        for (let i = 0; i < volleyCount; i++) {
+          if (g.bullets.length >= MAX_BULLETS) break;
+          const offset = i - (volleyCount - 1) / 2;
+          const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
+          const aim = predictedAimPoint(target, lead);
+          const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
+          const jitter = offset * shotSpreadStep(p) * 0.42 * (1 - aimAssist);
+          const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
+          const crit = Math.random() < p.crit;
+          g.bullets.push({
+            x: slot.x + clamp(offset, -6, 6) * 2.4,
+            y: slot.y - 24 - Math.abs(offset) * 0.24,
+            vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+            r: 7, life: 2.8, age: 0, speed, facility: true,
+            bossPierce: target.type === "boss",
+            damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
+          });
+          fired++;
+        }
       }
       if (fired > 0) {
         g.facilityPulse = 1;
-        g.facilityCd = Math.max(0.08, 1.15 / facilityEffectiveRate(p));
+        g.facilityCd = Math.max(0.05, 1 / facilityEffectiveRate(p));
       }
     }
 
@@ -2545,25 +2507,22 @@
       const slots = facilitySlots(game);
       if (!slots.length) return;
       const pulse = game.facilityPulse || 0;
-      const hidden = Math.max(0, totalFacilityCount(game) - slots.length);
-      if (hidden > 0) {
-        const a = arenaRect();
-        const dots = Math.min(30, hidden);
-        const cols = 10;
-        const startX = a.x + a.w * 0.5 - (cols - 1) * 8;
-        const startY = Math.min(...slots.map(slot => slot.y)) - 30;
-        ctx.save();
-        ctx.globalAlpha = 0.32;
-        for (let i = 0; i < dots; i++) {
-          const x = startX + (i % cols) * 16;
-          const y = startY - Math.floor(i / cols) * 11;
-          ctx.fillStyle = "#1a1008";
-          ctx.fillRect(x - 4, y - 5, 8, 10);
-          ctx.fillStyle = "#84c7a1";
-          ctx.fillRect(x - 2, y - 9, 4, 5);
-        }
-        ctx.restore();
+      const t = performance.now() / 1000;
+      const player = game.player;
+      ctx.save();
+      ctx.globalAlpha = 0.28 + pulse * 0.26;
+      ctx.strokeStyle = "#84c7a1";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 8]);
+      circle(player.x, player.y, 66 + Math.sin(t * 4) * 3 + pulse * 10, "#84c7a1", false, 2);
+      ctx.setLineDash([]);
+      for (const slot of slots) {
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.lineTo(slot.x, slot.y);
+        ctx.stroke();
       }
+      ctx.restore();
       ctx.save();
       ctx.globalAlpha = 0.34;
       ctx.fillStyle = "#0f0a06";
@@ -2571,23 +2530,25 @@
         ctx.fillRect(slot.x - 42, slot.y + 18, 84, 8);
       }
       ctx.restore();
-      for (const slot of slots) {
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i];
+        const bob = Math.sin(t * 5 + i * 0.8) * 3;
         ctx.save();
         ctx.fillStyle = "#1a1008";
-        ctx.fillRect(slot.x - 25, slot.y - 15, 50, 34);
+        ctx.fillRect(slot.x - 25, slot.y - 15 + bob, 50, 34);
         ctx.fillStyle = "#4a2d18";
-        ctx.fillRect(slot.x - 19, slot.y - 22, 38, 15);
+        ctx.fillRect(slot.x - 19, slot.y - 22 + bob, 38, 15);
         ctx.fillStyle = "#6f8db8";
-        ctx.fillRect(slot.x - 14, slot.y - 31 - pulse * 3, 28, 18);
+        ctx.fillRect(slot.x - 14, slot.y - 31 + bob - pulse * 3, 28, 18);
         ctx.fillStyle = "#84c7a1";
-        ctx.fillRect(slot.x - 6, slot.y - 43 - pulse * 9, 12, 26);
+        ctx.fillRect(slot.x - 6, slot.y - 43 + bob - pulse * 9, 12, 26);
         ctx.fillStyle = "#fff3d6";
-        ctx.fillRect(slot.x - 3, slot.y - 45 - pulse * 9, 6, 8);
+        ctx.fillRect(slot.x - 3, slot.y - 45 + bob - pulse * 9, 6, 8);
         ctx.strokeStyle = "#fff3d6";
         ctx.lineWidth = 2;
-        ctx.strokeRect(slot.x - 25, slot.y - 15, 50, 34);
+        ctx.strokeRect(slot.x - 25, slot.y - 15 + bob, 50, 34);
         ctx.globalAlpha = 0.16 + pulse * 0.28;
-        circle(slot.x, slot.y - 31, 24 + pulse * 14, "#84c7a1", false, 3);
+        circle(slot.x, slot.y - 31 + bob, 24 + pulse * 14, "#84c7a1", false, 3);
         ctx.restore();
       }
     }
@@ -2843,11 +2804,12 @@
           if (lvEl) lvEl.textContent = `Lv.${save.gadgets[gadget.id] || 0}`;
           row.querySelectorAll("[data-gadget]").forEach(btn => {
             const amount = Number(btn.dataset.amount || 1);
-            const cost = gadgetCost(gadget, amount);
-            const can = canAfford(game.runCoins, cost);
+            const buyAmount = gadgetBuyAmount(gadget, amount);
+            const cost = buyAmount > 0 ? gadgetCost(gadget, buyAmount) : 0;
+            const can = buyAmount > 0 && canAfford(game.runCoins, cost);
             btn.classList.toggle("primary", can);
             btn.classList.toggle("disabled", !can);
-            btn.textContent = `+${amount} ${formatMoney(cost)}C`;
+            btn.textContent = buyAmount > 0 ? `+${buyAmount} ${formatMoney(cost)}C` : "MAX";
           });
         });
         return;
@@ -2870,11 +2832,12 @@
       }).join("");
 
       const gadgetRows = listItems => listItems.map(gadget => {
-        const lv = save.gadgets[gadget.id] || 0;
+        const lv = gadget.id === "towerCore" ? Math.min(6, save.gadgets[gadget.id] || 0) : (save.gadgets[gadget.id] || 0);
         const buttons = [1, 10].map(amount => {
-          const cost = gadgetCost(gadget, amount);
-          const can = canAfford(game.runCoins, cost);
-          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-gadget="${gadget.id}" data-amount="${amount}">+${amount} ${formatMoney(cost)}C</button>`;
+          const buyAmount = gadgetBuyAmount(gadget, amount);
+          const cost = buyAmount > 0 ? gadgetCost(gadget, buyAmount) : 0;
+          const can = buyAmount > 0 && canAfford(game.runCoins, cost);
+          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-gadget="${gadget.id}" data-amount="${amount}">${buyAmount > 0 ? `+${buyAmount} ${formatMoney(cost)}C` : "MAX"}</button>`;
         }).join("");
         return `
           <div class="shop-buy" data-shop-row data-gadget-row="${gadget.id}">
@@ -2910,7 +2873,7 @@
         保存済み戦闘強化Lv合計: <b>${Object.values(save.runUpgrades || {}).reduce((a, b) => a + safeLevel(b), 0)}</b>
       `;
       const c = CHARACTERS.knight;
-      $("charSummary").innerHTML = `${c.name}<br>高いHPで、左右移動と自動攻撃に向いた最初の冒険者です。`;
+      $("charSummary").innerHTML = `${c.name}<br>中央で陣形を支え、前後の砲台と一緒に自動攻撃します。`;
       const selected = activeSelectedStage();
       const cfg = stageConfig(selected);
       const unlocks = [
@@ -2969,12 +2932,19 @@
       return scaledCost(g.baseCost, currentLv, amount, 1.34);
     }
 
+    function gadgetBuyAmount(gadget, requested) {
+      const amount = Math.max(1, safeLevel(requested) || 1);
+      if (gadget.id !== "towerCore") return amount;
+      return Math.min(amount, Math.max(0, 6 - safeLevel(save.gadgets.towerCore || 0)));
+    }
+
     function buyGadget(id, amount = 1) {
       const gadget = GADGET_DEFS.find(x => x.id === id);
       if (!gadget) return;
       const stageN = game && screen === "game" ? game.stage.n : featureStage();
       if (!isGadgetVisible(gadget, stageN)) return;
-      const levels = Math.max(1, safeLevel(amount) || 1);
+      const levels = gadgetBuyAmount(gadget, amount);
+      if (levels <= 0) return;
       const cost = gadgetCost(gadget, levels);
       const buyingInRun = game && screen === "game" && game.state === "playing";
       const wallet = buyingInRun ? game.runCoins : save.coins;
