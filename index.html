@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.7</div>
+          <div class="version-badge" id="versionText">v0.9.9</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,7 +766,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.7";
+    const APP_VERSION = "v0.9.9";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
@@ -1146,7 +1146,12 @@
     function bossHpText(g = game) {
       if (!g) return "BOSS HP --";
       const boss = g.enemies.find(e => e.type === "boss" && e.maxHp > 0);
-      return boss ? `BOSS HP ${formatPercent(boss.hp / boss.maxHp)}` : "BOSS HP --";
+      return boss ? `BOSS HP ${formatPercent(enemyHpRatio(boss))}` : "BOSS HP --";
+    }
+    function enemyHpRatio(e) {
+      if (!e || safeNumber(e.maxHp, 0) <= 0) return 0;
+      if (e.type === "boss" && Number.isFinite(e.hpRatio)) return clamp(e.hpRatio, 0, 1);
+      return clamp(safeNumber(e.hp, 0) / safeNumber(e.maxHp, 1), 0, 1);
     }
     function featureStage() {
       return STAGE_OVERRIDE || save.stage.unlocked || 1;
@@ -1452,6 +1457,7 @@
       autoAttack(dt);
       updateLasers(dt);
       updateBullets(dt);
+      updateBossPressure(dt);
       updateEnemies(dt);
       updateDrops(dt);
       updateParticles(dt);
@@ -1605,6 +1611,8 @@
       const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.28, game.stage.n * 0.004));
       boss.hp = clamp(scaledHp, targetHp * 0.82, targetHp * 1.25);
       boss.maxHp = boss.hp;
+      boss.hpRatio = 1;
+      boss.damageRatioTaken = 0;
       flashToast("BOSS: コインドラゴン / 足止め戦", "#d5a84b");
       game.shake = 10;
       beep("rare");
@@ -1616,10 +1624,19 @@
       const laserDps = p.laserLevel > 0 ? p.damage * (1.2 + p.laserLevel * 0.09) / laserCd : 0;
       const facilitySlotsCount = totalFacilityCount(g);
       const facilityDps = facilitiesUnlocked(g.stage.n)
-        ? facilitySlotsCount * p.damage * 0.55 * (p.facilityDamage || 1) * (p.facilityRate || 1) / 1.15
+        ? facilitySlotsCount * facilityShotDamage(p) * facilityEffectiveRate(p) / 1.15
         : 0;
       const auraDps = (p.poison || 0) * p.damage * 0.045 + (p.orbs || 0) * 5.8 * (p.orbDamageMult || 1);
       return Math.max(80, (bulletDps + laserDps + facilityDps + auraDps) * 0.78);
+    }
+
+    function updateBossPressure(dt) {
+      const g = game;
+      if (!g || !g.bossSpawned) return;
+      const boss = g.enemies.find(e => e.type === "boss" && e.hp > 0);
+      if (!boss) return;
+      const upgradeBonus = Math.min(0.42, Math.sqrt(upgradePressure(g)) * 0.012);
+      damageBossRatio(boss, (0.86 + upgradeBonus) * dt / BOSS_TARGET_SECONDS);
     }
 
     function updateBossAttacks(dt) {
@@ -1715,6 +1732,18 @@
       });
     }
 
+    function facilityEffectiveRate(p) {
+      const fireRateBoost = Math.sqrt(Math.max(1, safeNumber(p.fireRate, 1) / CHARACTERS.knight.fireRate));
+      return Math.max(1, (p.facilityRate || 1) * fireRateBoost);
+    }
+
+    function facilityShotDamage(p) {
+      const projectileBoost = 1 + Math.max(0, safeLevel(p.projectiles || 1) - 2) * 0.035;
+      const fireBoost = 1 + Math.min(3, safeLevel(p.fireLevel || 0) * 0.015);
+      const critBoost = 1 + Math.min(0.85, safeNumber(p.crit, 0));
+      return p.damage * 0.55 * (p.facilityDamage || 1) * projectileBoost * fireBoost * critBoost;
+    }
+
     function updateFacilities(dt) {
       const g = game, p = g.player;
       const slots = facilitySlots(g);
@@ -1729,7 +1758,7 @@
       const shotCount = Math.min(MAX_FACILITY_VOLLEY, total, room);
       if (shotCount <= 0) return;
       const squadScale = Math.max(1, total / shotCount);
-      const damage = p.damage * 0.55 * (p.facilityDamage || 1) * squadScale;
+      const damage = facilityShotDamage(p) * squadScale;
       const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
       let fired = 0;
       for (let i = 0; i < shotCount; i++) {
@@ -1738,19 +1767,21 @@
         if (!target || g.bullets.length >= MAX_BULLETS) continue;
         const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
         const aim = predictedAimPoint(target, lead);
-        const jitter = (i - (shotCount - 1) / 2) * 0.006;
+        const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
+        const jitter = (i - (shotCount - 1) / 2) * 0.006 * (1 - aimAssist);
         const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
+        const crit = Math.random() < p.crit;
         g.bullets.push({
           x: slot.x, y: slot.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 6, life: 2.6, age: 0, speed, facility: true,
           bossPierce: target.type === "boss",
-          damage, crit: false, fire: 0
+          damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
         fired++;
       }
       if (fired > 0) {
         g.facilityPulse = 1;
-        g.facilityCd = Math.max(0.16, 1.15 / (p.facilityRate || 1));
+        g.facilityCd = Math.max(0.08, 1.15 / facilityEffectiveRate(p));
       }
     }
 
@@ -2008,7 +2039,7 @@
             e.burn -= dt;
             damageEnemy(e, (4 + p.fireLevel * 2) * dt, "#cf6f52", false);
           }
-          if (e.hp <= 0) {
+          if (e.hp <= 0 || enemyHpRatio(e) <= 0) {
             killEnemy(e);
             g.enemies.splice(i, 1);
           }
@@ -2085,12 +2116,28 @@
       }
     }
 
+    function damageBossRatio(e, ratioDamage) {
+      if (!e || e.type !== "boss") return;
+      const beforeRatio = enemyHpRatio(e);
+      const nextRatio = clamp(beforeRatio - Math.max(0, safeNumber(ratioDamage, 0)), 0, 1);
+      e.hpRatio = nextRatio;
+      e.damageRatioTaken = clamp(safeNumber(e.damageRatioTaken, 0) + Math.max(0, safeNumber(ratioDamage, 0)), 0, 1);
+      e.hp = Math.max(0, safeNumber(e.maxHp, 0) * nextRatio);
+      if (nextRatio < beforeRatio) {
+        game.bossDamageFlash = Math.max(game.bossDamageFlash || 0, 0.35);
+        e.hit = 1;
+      }
+    }
+
     function damageEnemy(e, amount, color, text = true) {
-      const dmg = Math.min(MAX_STAT, Math.max(0, safeNumber(amount, 0)));
+      const dmg = Math.min(MAX_STAT * 1e6, Math.max(0, safeNumber(amount, 0)));
       const beforeHp = e.hp;
-      e.hp = Math.max(0, safeNumber(e.hp, 0) - dmg);
-      if (e.type === "boss" && dmg > 0 && e.hp === beforeHp && beforeHp > 0) {
-        e.hp = Math.max(0, beforeHp * (1 - 1e-10));
+      if (e.type === "boss" && dmg > 0 && safeNumber(e.maxHp, 0) > 0) {
+        const rawRatioDamage = dmg / e.maxHp;
+        const ratioDamage = Math.max(Number.isFinite(rawRatioDamage) ? rawRatioDamage : 0, 0);
+        damageBossRatio(e, ratioDamage || 1e-8);
+      } else {
+        e.hp = Math.max(0, safeNumber(e.hp, 0) - dmg);
       }
       if (e.type === "boss" && dmg > 0) game.bossDamageFlash = 1;
       e.hit = 1;
@@ -2570,12 +2617,12 @@
         ctx.fillStyle = "rgba(255,243,214,0.22)";
         ctx.fillRect(e.x - e.r, e.y - e.r - 10, w, 4);
         ctx.fillStyle = "#c75246";
-        ctx.fillRect(e.x - e.r, e.y - e.r - 10, w * clamp(e.hp / e.maxHp, 0, 1), 4);
+        ctx.fillRect(e.x - e.r, e.y - e.r - 10, w * enemyHpRatio(e), 4);
         if (e.type === "boss") {
           ctx.font = "800 13px system-ui";
           ctx.textAlign = "center";
           ctx.fillStyle = "#fff3d6";
-          ctx.fillText(formatPercent(e.hp / e.maxHp), e.x, e.y - e.r - 16);
+          ctx.fillText(formatPercent(enemyHpRatio(e)), e.x, e.y - e.r - 16);
         }
       }
     }
