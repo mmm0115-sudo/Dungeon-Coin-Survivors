@@ -1193,7 +1193,7 @@
         autoSpeed: 170,
         shake: 0,
         spawn: 0,
-        fire: 0,
+        fire: 1,
         laserCd: 0,
         shopUiTimer: 0,
         orbAngle: 0,
@@ -1313,7 +1313,6 @@
       g.totalTime += dt;
       g.distance += g.autoSpeed * dt;
       g.spawn -= dt;
-      g.fire -= dt;
       g.orbAngle += dt * 3.4;
       g.shake = Math.max(0, g.shake - dt * 18);
 
@@ -1452,18 +1451,19 @@
 
     function autoAttack(dt) {
       const g = game, p = g.player;
-      if (g.fire > 0) return;
-      const interval = 1 / Math.max(0.1, p.fireRate);
-      const maxBursts = Math.min(16, Math.max(1, Math.ceil(dt / interval) + 2));
+      g.fire = Math.min(24, g.fire + Math.max(0.1, p.fireRate) * dt);
+      if (g.fire < 1) return;
+      const maxBursts = Math.min(16, Math.floor(g.fire));
       let bursts = 0;
-      while (g.fire <= 0 && bursts < maxBursts) {
+      while (g.fire >= 1 && bursts < maxBursts) {
         if (!fireVolley()) {
-          g.fire = Math.max(g.fire, 0.025);
+          g.fire = Math.min(g.fire, 3);
           return;
         }
-        g.fire += interval;
+        g.fire -= 1;
         bursts++;
       }
+      if (bursts > 0) beep("shoot");
     }
 
     function fireVolley() {
@@ -1494,7 +1494,6 @@
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
-      beep("shoot");
       return true;
     }
 
