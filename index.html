@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.6</div>
+          <div class="version-badge" id="versionText">v0.9.7</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,12 +766,14 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.6";
+    const APP_VERSION = "v0.9.7";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
+    const MAX_VISIBLE_FACILITIES = 12;
+    const MAX_FACILITY_VOLLEY = 18;
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -878,7 +880,7 @@
       { id: "multiLauncher", name: "連装ボルト射出装置", unlockStage: 2, baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
       { id: "aimAssist", name: "射撃制御装置", unlockStage: 2, baseCost: 155, desc: "弾のばらつきを減らし、攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
       { id: "coinVacuum", name: "コイン吸引装置", unlockStage: 2, baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
-      { id: "towerCore", name: "施設砲台増設", unlockStage: 3, baseCost: 220, desc: "下段施設が弾を撃つ / 施設数と威力アップ", apply: (p, lv) => { p.facilityCount += lv; p.facilityDamage *= Math.pow(1.12, lv); } },
+      { id: "towerCore", name: "施設砲台増設", unlockStage: 3, baseCost: 220, desc: "Lvごとに施設 +1 / 後方部隊として全台が攻撃", apply: (p, lv) => { p.facilityCount += lv; p.facilityDamage *= Math.pow(1.08, lv); } },
       { id: "towerRate", name: "施設連射機構", unlockStage: 3, baseCost: 260, desc: "施設の連射速度アップ", apply: (p, lv) => p.facilityRate *= Math.pow(1.08, lv) },
       { id: "repairUnit", name: "自動修復装置", unlockStage: 3, baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
       { id: "stormRegulator", name: "雷珠制御装置", unlockStage: 4, baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
@@ -1136,7 +1138,10 @@
     function facilityPowerText(g = game) {
       if (!g || !facilitiesUnlocked(g.stage.n)) return "施設: Stage 1-3で解放";
       const p = g.player;
-      return `施設${facilitySlots(g).length}基 / 威力x${(p.facilityDamage || 1).toFixed(1)} / 連射x${(p.facilityRate || 1).toFixed(1)}`;
+      const total = totalFacilityCount(g);
+      const hidden = Math.max(0, total - visibleFacilityCount(g));
+      const reserve = hidden ? ` / 後方${formatStat(hidden)}基` : "";
+      return `施設${formatStat(total)}基${reserve} / 威力x${(p.facilityDamage || 1).toFixed(1)} / 連射x${(p.facilityRate || 1).toFixed(1)}`;
     }
     function bossHpText(g = game) {
       if (!g) return "BOSS HP --";
@@ -1256,7 +1261,7 @@
       player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
       player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
       player.bulletSpeedBonus = Math.min(40, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
-      player.facilityCount = Math.min(9, Math.max(0, safeLevel(player.facilityCount || 0)));
+      player.facilityCount = Math.min(1000000, Math.max(0, safeLevel(player.facilityCount || 0)));
       player.facilityDamage = Math.min(1e20, Math.max(1, safeNumber(player.facilityDamage, 1)));
       player.facilityRate = Math.min(60, Math.max(1, safeNumber(player.facilityRate, 1)));
     }
@@ -1609,7 +1614,7 @@
       const bulletDps = p.damage * Math.max(1, p.projectiles) * Math.max(0.1, p.fireRate) * (1 + p.crit);
       const laserCd = Math.max(0.72, 2.9 - (p.laserLevel || 0) * 0.038);
       const laserDps = p.laserLevel > 0 ? p.damage * (1.2 + p.laserLevel * 0.09) / laserCd : 0;
-      const facilitySlotsCount = facilitySlots(g).length;
+      const facilitySlotsCount = totalFacilityCount(g);
       const facilityDps = facilitiesUnlocked(g.stage.n)
         ? facilitySlotsCount * p.damage * 0.55 * (p.facilityDamage || 1) * (p.facilityRate || 1) / 1.15
         : 0;
@@ -1679,19 +1684,33 @@
       beep("shoot");
     }
 
+    function totalFacilityCount(g = game) {
+      if (!g || !facilitiesUnlocked(g.stage.n)) return 0;
+      return Math.max(0, safeLevel(g.player.facilityCount || 0));
+    }
+
+    function visibleFacilityCount(g = game) {
+      return Math.min(MAX_VISIBLE_FACILITIES, totalFacilityCount(g));
+    }
+
     function facilitySlots(g = game) {
       if (!g || !facilitiesUnlocked(g.stage.n)) return [];
       const p = g.player;
       const a = arenaRect();
       const lanes = laneCenters(a);
-      const count = Math.min(3, 1 + safeLevel(p.facilityCount || 0));
-      const slotLanes = count === 1 ? [1] : count === 2 ? [0, 2] : [0, 1, 2];
-      const y = Math.min(playerLaneY() + 30, a.y + a.h - 36);
-      return slotLanes.map(lane => {
+      const count = visibleFacilityCount(g);
+      if (count <= 0) return [];
+      const rows = Math.ceil(count / 3);
+      const baseY = Math.min(playerLaneY() + 30, a.y + a.h - 36);
+      return Array.from({ length: count }, (_, i) => {
+        const row = Math.floor(i / 3);
+        const lane = i % 3;
+        const rowOffset = rows <= 1 ? 0 : (rows - 1 - row) * 20;
         return {
           lane,
           x: lanes[lane] || lanes[1],
-          y
+          y: baseY - rowOffset,
+          row
         };
       });
     }
@@ -1699,21 +1718,28 @@
     function updateFacilities(dt) {
       const g = game, p = g.player;
       const slots = facilitySlots(g);
-      if (!slots.length) return;
+      const total = totalFacilityCount(g);
+      if (!slots.length || total <= 0) return;
       g.facilityCd -= dt;
       g.facilityPulse = Math.max(0, (g.facilityPulse || 0) - dt * 6);
       if (g.facilityCd > 0) return;
       if (g.bullets.length >= MAX_BULLETS) return;
 
-      const damage = p.damage * 0.55 * (p.facilityDamage || 1);
+      const room = Math.max(0, MAX_BULLETS - g.bullets.length);
+      const shotCount = Math.min(MAX_FACILITY_VOLLEY, total, room);
+      if (shotCount <= 0) return;
+      const squadScale = Math.max(1, total / shotCount);
+      const damage = p.damage * 0.55 * (p.facilityDamage || 1) * squadScale;
       const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
       let fired = 0;
-      for (const slot of slots) {
+      for (let i = 0; i < shotCount; i++) {
+        const slot = slots[i % slots.length];
         const target = facilityTarget(slot);
         if (!target || g.bullets.length >= MAX_BULLETS) continue;
         const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
         const aim = predictedAimPoint(target, lead);
-        const a = Math.atan2(aim.y - slot.y, aim.x - slot.x);
+        const jitter = (i - (shotCount - 1) / 2) * 0.006;
+        const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
         g.bullets.push({
           x: slot.x, y: slot.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 6, life: 2.6, age: 0, speed, facility: true,
@@ -2454,6 +2480,25 @@
       const slots = facilitySlots(game);
       if (!slots.length) return;
       const pulse = game.facilityPulse || 0;
+      const hidden = Math.max(0, totalFacilityCount(game) - slots.length);
+      if (hidden > 0) {
+        const a = arenaRect();
+        const dots = Math.min(30, hidden);
+        const cols = 10;
+        const startX = a.x + a.w * 0.5 - (cols - 1) * 8;
+        const startY = Math.min(...slots.map(slot => slot.y)) - 30;
+        ctx.save();
+        ctx.globalAlpha = 0.32;
+        for (let i = 0; i < dots; i++) {
+          const x = startX + (i % cols) * 16;
+          const y = startY - Math.floor(i / cols) * 11;
+          ctx.fillStyle = "#1a1008";
+          ctx.fillRect(x - 4, y - 5, 8, 10);
+          ctx.fillStyle = "#84c7a1";
+          ctx.fillRect(x - 2, y - 9, 4, 5);
+        }
+        ctx.restore();
+      }
       ctx.save();
       ctx.globalAlpha = 0.34;
       ctx.fillStyle = "#0f0a06";
