@@ -1,4 +1,4 @@
- <!doctype html>
+<!doctype html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
@@ -622,7 +622,7 @@
           <div class="menu-grid">
             <button class="primary" data-action="start">プレイ開始</button>
             <button data-action="upgrades">強化</button>
-            <button data-action="equipment">装備</button>
+            <button data-action="equipment">装備/ガジェット</button>
             <button data-action="codex">図鑑</button>
             <button data-action="settings">設定</button>
             <button class="danger" data-action="reset">セーブリセット</button>
@@ -685,8 +685,8 @@
       <div class="menu">
         <div class="panel row">
           <div>
-            <h2>装備</h2>
-            <p class="sub">装備はコインで購入します。1つだけ装着でき、不要な装備は売却できます。</p>
+            <h2>装備/ガジェット</h2>
+            <p class="sub">装備は1つだけ装着できます。ガジェットは購入すると保存され、次回以降も常に効果が出ます。</p>
           </div>
           <button data-action="title">戻る</button>
         </div>
@@ -758,6 +758,15 @@
       { id: "heal", name: "敵撃破時に回復", desc: "撃破時にHPを1回復", cost: 26, run: (g, n = 1) => g.player.killHeal += n }
     ];
 
+    const GADGET_DEFS = [
+      { id: "targetChip", name: "照準チップ", baseCost: 180, desc: "弾ダメージ +10%", apply: (p, lv) => p.damage *= Math.pow(1.10, lv) },
+      { id: "battery", name: "小型バッテリー", baseCost: 160, desc: "最大HP +22", apply: (p, lv) => { p.maxHp += 22 * lv; p.hp += 22 * lv; } },
+      { id: "collector", name: "磁力コイル", baseCost: 140, desc: "自動回収範囲 +42", apply: (p, lv) => p.magnet += 42 * lv },
+      { id: "wallet", name: "コイン財布", baseCost: 220, desc: "コイン獲得 +8%", apply: (p, lv) => p.coinMult *= Math.pow(1.08, lv) },
+      { id: "venomAmp", name: "毒アンプ", baseCost: 260, desc: "毒Lv +1 / 毒DPS強化", apply: (p, lv) => { p.poison += lv; p.poisonBoost *= Math.pow(1.14, lv); } },
+      { id: "orbCore", name: "雷コア", baseCost: 340, desc: "2Lvごとに雷オーブ +1", apply: (p, lv) => p.orbs += Math.floor(lv / 2) }
+    ];
+
     const ENEMY_TYPES = {
       slime: { name: "Neon Slime", hp: 16, speed: 36, damage: 1.2, xp: 4, coin: 3, color: "#54f7ff", radius: 12 },
       bat: { name: "Glitch Bat", hp: 14, speed: 64, damage: 1.8, xp: 5, coin: 3, color: "#ff4fd8", radius: 10 },
@@ -820,6 +829,7 @@
         coins: 0,
         upgrades: Object.fromEntries(UPGRADE_DEFS.map(u => [u.id, 0])),
         runUpgrades: Object.fromEntries(SKILL_POOL.map(s => [s.id, 0])),
+        gadgets: Object.fromEntries(GADGET_DEFS.map(g => [g.id, 0])),
         equipment: [],
         equippedId: null,
         codex: { enemies: {}, rarities: {}, skills: {}, achievements: {} },
@@ -845,11 +855,16 @@
         Object.entries(data.runUpgrades || {}).forEach(([id, lv]) => {
           if (id in runUpgrades) runUpgrades[id] = lv;
         });
+        const gadgets = { ...d.gadgets };
+        Object.entries(data.gadgets || {}).forEach(([id, lv]) => {
+          if (id in gadgets) gadgets[id] = lv;
+        });
         return {
           ...d,
           ...data,
           upgrades,
           runUpgrades,
+          gadgets,
           codex: { ...d.codex, ...(data.codex || {}) },
           best: { ...d.best, ...(data.best || {}) },
           stage: { ...d.stage, ...(data.stage || {}), clears: { ...d.stage.clears, ...((data.stage && data.stage.clears) || {}) } },
@@ -944,10 +959,11 @@
       const bossWall = n % 8 === 0 ? 2.15 : 1;
       const baseDifficulty = 1 + (world - 1) * 0.54 + (floor - 1) * 0.105;
       const difficulty = baseDifficulty * late * endlessRamp * bossWall * 1.22;
+      const hpScale = Math.pow(1.22, n - 1) * (1 + (world - 1) * 0.25) * (n % 8 === 0 ? 1.45 : 1);
       return {
-        n, world, floor, difficulty,
+        n, world, floor, difficulty, hpScale,
         duration: 36 + Math.min(20, (world - 1) * 3.2 + floor * 1.05),
-        bossHp: 1.15 + difficulty * (n % 8 === 0 ? 0.78 : 0.48),
+        bossHp: 1.15 + difficulty * (n % 8 === 0 ? 0.78 : 0.48) + n * 0.035,
         reward: 35 + n * 9
       };
     }
@@ -1013,8 +1029,10 @@
       base.fireLevel = 0;
       base.orbs = 0;
       base.poison = 0;
+      base.poisonBoost = 1;
       base.killHeal = 0;
       UPGRADE_DEFS.forEach(u => u.apply(base, save.upgrades[u.id] || 0));
+      GADGET_DEFS.forEach(g => g.apply(base, save.gadgets[g.id] || 0));
       const eq = save.equipment.find(e => e.id === save.equippedId);
       if (eq) eq.effects.forEach(e => {
         const def = EQUIP_EFFECTS.find(x => x.id === e.id);
@@ -1048,7 +1066,7 @@
           hp: p.hp, maxHp: p.maxHp, speed: p.speed, damage: p.damage,
           fireRate: p.fireRate, projectiles: p.projectiles, crit: p.crit,
           magnet: p.magnet, coinMult: p.coinMult, rare: p.rare,
-          fireLevel: p.fireLevel, orbs: p.orbs, poison: p.poison, killHeal: p.killHeal,
+          fireLevel: p.fireLevel, orbs: p.orbs, poison: p.poison, poisonBoost: p.poisonBoost, killHeal: p.killHeal,
           level: 1, xp: 0, nextXp: 24, dashCd: 0, dashTime: 0, lastDir: 1
         },
         enemies: [],
@@ -1224,11 +1242,12 @@
       const x = a.x + a.w + margin + rand(0, 140);
       const lane = playerLaneY();
       const y = type === "boss" ? lane : clamp(lane + rand(-100, 38), a.y + 56, a.y + a.h - 48);
-      const scale = (1.05 + game.t / 245) * game.stage.difficulty;
+      const baseScale = (1.05 + game.t / 245) * game.stage.difficulty;
       const speedScale = (1.08 + game.t / 620) * Math.sqrt(game.stage.difficulty);
+      const hpScale = baseScale * (game.stage.hpScale || 1) * (type === "boss" ? 1.35 : 1);
       game.enemies.push({
-        type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * speedScale, damage: def.damage * scale * 1.12,
+        type, x, y, r: def.radius, hp: def.hp * hpScale, maxHp: def.hp * hpScale,
+        speed: def.speed * speedScale, damage: def.damage * baseScale * 1.12,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1330,7 +1349,7 @@
     }
 
     function poisonAuraDps(p) {
-      return p.damage * (0.18 + p.poison * 0.07);
+      return p.damage * (0.18 + p.poison * 0.07) * (p.poisonBoost || 1);
     }
 
     function applyAuraDamage(dt) {
@@ -1452,8 +1471,18 @@
       if (save.settings.damageNumbers) addText(game.player.x, game.player.y - 48, `${skill.name} +${levels}`, "#ffd84d");
     }
 
+    function scaledCost(baseCost, currentLv, amount = 1, growth = 1.18) {
+      const levels = Math.max(1, Number(amount) || 1);
+      let total = 0;
+      for (let i = 0; i < levels; i++) {
+        total += Math.ceil(baseCost * Math.pow(growth, currentLv + i));
+      }
+      return total;
+    }
+
     function runSkillCost(skill, amount = 1) {
-      return skill.cost * Math.max(1, Number(amount) || 1);
+      const currentLv = game ? (game.shopLevels[skill.id] || 0) : (save.runUpgrades[skill.id] || 0);
+      return scaledCost(skill.cost, currentLv, amount, 1.2);
     }
 
     function advanceStage() {
@@ -1822,6 +1851,7 @@
         最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
         最高撃破数: <b>${save.best.kills}</b><br>
         所持装備: <b>${save.equipment.length}</b><br>
+        ガジェットLv合計: <b>${Object.values(save.gadgets || {}).reduce((a, b) => a + b, 0)}</b><br>
         保存済み戦闘強化Lv合計: <b>${Object.values(save.runUpgrades || {}).reduce((a, b) => a + b, 0)}</b>
       `;
       const c = CHARACTERS.knight;
@@ -1848,7 +1878,7 @@
             <div class="row">
               <div>
                 <h3>${u.name}</h3>
-                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 固定単価 ${u.baseCost}C</p>
+                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 次単価 ${upgradeCost(u, 1)}C / 購入ごとに値上がり</p>
               </div>
               <div class="equip-actions">${buttons}</div>
             </div>`;
@@ -1856,7 +1886,8 @@
     }
 
     function upgradeCost(u, amount = 1) {
-      return u.baseCost * Math.max(1, Number(amount) || 1);
+      const currentLv = save.upgrades[u.id] || 0;
+      return scaledCost(u.baseCost, currentLv, amount, 1.18);
     }
 
     function buyUpgrade(id, amount = 1) {
@@ -1869,6 +1900,24 @@
       save.upgrades[id] = (save.upgrades[id] || 0) + levels;
       saveGame();
       renderUpgrades();
+      beep("coin");
+    }
+
+    function gadgetCost(g, amount = 1) {
+      const currentLv = save.gadgets[g.id] || 0;
+      return scaledCost(g.baseCost, currentLv, amount, 1.22);
+    }
+
+    function buyGadget(id, amount = 1) {
+      const g = GADGET_DEFS.find(x => x.id === id);
+      if (!g) return;
+      const levels = Math.max(1, Number(amount) || 1);
+      const cost = gadgetCost(g, levels);
+      if (save.coins < cost) return;
+      save.coins -= cost;
+      save.gadgets[id] = (save.gadgets[id] || 0) + levels;
+      saveGame();
+      renderEquipment();
       beep("coin");
     }
 
@@ -1886,6 +1935,32 @@
               ${p.name}<br><span class="tiny">${p.cost}C / ${p.desc}</span>
             </button>`).join("")}
         </div>`;
+      const gadgets = `
+        <div class="row">
+          <div>
+            <h3>ガジェットショップ</h3>
+            <p class="tiny">買ったガジェットは保存され、次回以降も常に発動します。価格はLvが上がるほど上昇します。</p>
+          </div>
+        </div>
+        ${GADGET_DEFS.map(g => {
+          const lv = save.gadgets[g.id] || 0;
+          const buttons = [1, 10].map(amount => {
+            const cost = gadgetCost(g, amount);
+            const can = save.coins >= cost;
+            return `<button class="${can ? "primary" : "disabled"}" data-gadget="${g.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+          }).join("");
+          return `
+            <div class="equip-item">
+              <div class="row" style="padding-top:0;">
+                <div>
+                  <h3>${g.name}</h3>
+                  <p class="tiny">${g.desc} / Lv.${lv} / 次単価 ${gadgetCost(g, 1)}C</p>
+                </div>
+                <span class="pill">保存</span>
+              </div>
+              <div class="equip-actions">${buttons}</div>
+            </div>`;
+        }).join("")}`;
       const inventory = save.equipment.length ? save.equipment.map(e => {
         const equipped = e.id === save.equippedId;
         return `
@@ -1904,7 +1979,7 @@
             </div>
           </div>`;
       }).join("") : `<p class="sub">まだ装備がありません。上のショップでコインを使って購入できます。</p>`;
-      $("equipmentList").innerHTML = shop + inventory;
+      $("equipmentList").innerHTML = shop + gadgets + inventory;
     }
 
     function equipItem(id) {
@@ -1937,6 +2012,10 @@
         const ok = save.codex.skills[s.id];
         return `<div class="row"><span>${s.name}</span><span class="pill">${ok ? "解放済み" : "未解放"}</span></div>`;
       }).join("");
+      const gadgetRows = GADGET_DEFS.map(g => {
+        const lv = save.gadgets[g.id] || 0;
+        return `<div class="row"><span>${g.name}</span><span class="pill">Lv.${lv}</span></div>`;
+      }).join("");
       const ach = [
         ["minute", "1分生存"],
         ["hunter", "100体撃破"],
@@ -1955,7 +2034,7 @@
         </div>
         <div style="height:12px"></div>
         <div class="two-col">
-          <div><h3>スキル</h3>${skillRows}</div>
+          <div><h3>スキル</h3>${skillRows}<h3 style="margin-top:12px;">ガジェット</h3>${gadgetRows}</div>
           <div><h3>実績</h3>${ach}<h3 style="margin-top:12px;">ステージ</h3>${stageRows}</div>
         </div>`;
     }
@@ -2025,6 +2104,7 @@
       if (el.dataset.skill) buyRunSkill(el.dataset.skill, Number(el.dataset.amount || 1));
       if (el.dataset.upgrade) buyUpgrade(el.dataset.upgrade, Number(el.dataset.amount || 1));
       if (el.dataset.buyEquip) buyEquipmentPack(el.dataset.buyEquip);
+      if (el.dataset.gadget) buyGadget(el.dataset.gadget, Number(el.dataset.amount || 1));
       if (el.dataset.equip) equipItem(el.dataset.equip);
       if (el.dataset.sell) sellItem(el.dataset.sell);
       if (el.dataset.setting) toggleSetting(el.dataset.setting);
