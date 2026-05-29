@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.4</div>
+          <div class="version-badge" id="versionText">v0.10.5</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,8 +766,8 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.4";
-    const BOSS_TARGET_SECONDS = 16;
+    const APP_VERSION = "v0.10.5";
+    const BOSS_TARGET_SECONDS = 8;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 1200;
     const MAX_PARTICLES = 140;
@@ -954,6 +954,7 @@
         codex: { enemies: {}, rarities: {}, skills: {}, achievements: {} },
         best: { time: 0, kills: 0, coins: 0 },
         stage: { unlocked: 1, selected: 1, clears: {} },
+        progress: { level: 1, xp: 0, nextXp: 24 },
         settings: { sound: true, shake: true, damageNumbers: true }
       };
     }
@@ -983,6 +984,10 @@
         best.time = safeNumber(best.time, 0);
         best.kills = safeLevel(best.kills);
         best.coins = clampMoney(best.coins);
+        const progress = { ...d.progress, ...(data.progress || {}) };
+        progress.level = Math.max(1, safeLevel(progress.level || 1));
+        progress.xp = Math.max(0, safeNumber(progress.xp, 0));
+        progress.nextXp = Math.max(24, safeNumber(progress.nextXp, 24));
         return {
           ...d,
           ...data,
@@ -993,6 +998,7 @@
           codex: { ...d.codex, ...(data.codex || {}) },
           best,
           stage: { ...d.stage, ...(data.stage || {}), clears: { ...d.stage.clears, ...((data.stage && data.stage.clears) || {}) } },
+          progress,
           settings: { ...d.settings, ...(data.settings || {}) }
         };
       } catch {
@@ -1017,6 +1023,11 @@
     function saveGame(updateSummary = true) {
       save.coins = clampMoney(save.coins);
       save.best.coins = clampMoney(save.best.coins);
+      if (save.progress) {
+        save.progress.level = Math.max(1, safeLevel(save.progress.level || 1));
+        save.progress.xp = Math.max(0, safeNumber(save.progress.xp, 0));
+        save.progress.nextXp = Math.max(24, safeNumber(save.progress.nextXp, 24));
+      }
       localStorage.setItem(SAVE_KEY, JSON.stringify(save));
       if (updateSummary) renderTitleSummary();
     }
@@ -1332,7 +1343,10 @@
           laserLevel: p.laserLevel, orbSpread: p.orbSpread, orbDamageMult: p.orbDamageMult,
           aimAssist: p.aimAssist, bulletSpeedBonus: p.bulletSpeedBonus,
           facilityCount: p.facilityCount, facilityDamage: p.facilityDamage, facilityRate: p.facilityRate,
-          level: 1, xp: 0, nextXp: 24, dashCd: 0, dashTime: 0, lastDir: 1
+          level: Math.max(1, safeLevel(save.progress && save.progress.level || 1)),
+          xp: Math.max(0, safeNumber(save.progress && save.progress.xp, 0)),
+          nextXp: Math.max(24, safeNumber(save.progress && save.progress.nextXp, 24)),
+          dashCd: 0, dashTime: 0, lastDir: 1
         },
         enemies: [],
         bullets: [],
@@ -1586,6 +1600,7 @@
       const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 1.15;
       const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.1, game.stage.n * 0.0018));
       boss.hp = clamp(scaledHp, targetHp * 0.34, targetHp * 0.58);
+      boss.hp *= 0.01;
       boss.maxHp = boss.hp;
       boss.hpRatio = 1;
       boss.damageRatioTaken = 0;
@@ -1729,9 +1744,17 @@
 
     function facilityFireAngle(slot) {
       const a = arenaRect();
+      if (game && game.bossSpawned) {
+        const boss = game.enemies.find(e => e.type === "boss" && e.hp > 0);
+        if (boss) return Math.atan2(boss.y - slot.y, boss.x - slot.x);
+      }
       const targetX = laneX(slot.lane, a);
       const targetY = a.y + 54;
       return Math.atan2(targetY - slot.y, targetX - slot.x);
+    }
+
+    function bulletSpawnOffset(offset, step = 3.8) {
+      return clamp(offset, -12, 12) * step;
     }
 
     function updateFacilities(dt) {
@@ -1755,9 +1778,10 @@
           const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
           const a = facilityFireAngle(slot) + offset * shotSpreadStep(p) * 0.5 * (1 - aimAssist);
           const crit = Math.random() < p.crit;
+          const lateral = bulletSpawnOffset(offset, 4.2);
           g.bullets.push({
-            x: slot.x + clamp(offset, -6, 6) * 2.4,
-            y: slot.y - 24 - Math.abs(offset) * 0.24,
+            x: slot.x + Math.cos(a + Math.PI / 2) * lateral,
+            y: slot.y - 24 + Math.sin(a + Math.PI / 2) * lateral - Math.abs(offset) * 0.08,
             vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
             r: 7, life: 3.4, age: 0, speed, facility: true,
             bossPierce: g.bossSpawned,
@@ -1857,9 +1881,10 @@
         aim.y += clamp(offset * target.r * 0.12, -target.r * 0.42, target.r * 0.42);
         const a = Math.atan2(aim.y - muzzleY, aim.x - muzzleX) + spread;
         const crit = Math.random() < p.crit;
+        const lateral = bulletSpawnOffset(offset, 2.4);
         g.bullets.push({
-          x: muzzleX + clamp(offset, -4, 4) * 1.2,
-          y: muzzleY - Math.abs(offset) * 0.18,
+          x: muzzleX + Math.cos(a + Math.PI / 2) * lateral,
+          y: muzzleY + Math.sin(a + Math.PI / 2) * lateral - Math.abs(offset) * 0.12,
           vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 7, life: 3.2, age: 0, speed,
           bossPierce: isBossTarget,
@@ -2198,6 +2223,12 @@
         flashToast(`LEVEL ${p.level}  ${formatGain(earned)}`, "#84c7a1", 850);
         beep("level");
       }
+      save.progress = {
+        level: p.level,
+        xp: p.xp,
+        nextXp: p.nextXp
+      };
+      saveGame(false);
     }
 
     function openLevelUp() {
