@@ -265,13 +265,20 @@
 
     .shop-head {
       display: grid;
-      grid-template-columns: 1fr auto;
+      grid-template-columns: 1fr auto auto;
       gap: 8px;
       align-items: center;
       border: 2px solid rgba(232, 198, 124, 0.34);
       border-radius: 4px;
       padding: 10px;
       background: rgba(255, 238, 190, 0.055);
+    }
+
+    .home-mini {
+      min-height: 32px;
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 1000;
     }
 
     .shop-title {
@@ -628,6 +635,7 @@
           <div class="tiny" id="stageInfo">購入で強化しながら突破</div>
         </div>
         <div class="pill" id="shopCoinText">0C</div>
+        <button class="home-mini" data-action="title">HOME</button>
       </div>
       <div id="runShopItems" class="shop-list"></div>
     </div>
@@ -644,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.2</div>
+          <div class="version-badge" id="versionText">v0.9.3</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -758,8 +766,12 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.2";
-    const BOSS_HP_MULTIPLIER = 1e8;
+    const APP_VERSION = "v0.9.3";
+    const BOSS_TARGET_SECONDS = 30;
+    const MAX_ENEMIES = 170;
+    const MAX_BULLETS = 150;
+    const MAX_PARTICLES = 140;
+    const MAX_TEXTS = 48;
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -855,12 +867,14 @@
     ];
 
     const GADGET_DEFS = [
-      { id: "laser", name: "魔導レーザー発射装置", baseCost: 160, desc: "一定時間ごとに貫通レーザーを放つ", apply: (p, lv) => p.laserLevel += lv },
-      { id: "multiLauncher", name: "連装ボルト射出装置", baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
-      { id: "aimAssist", name: "射撃制御装置", baseCost: 155, desc: "弾のばらつきを減らし、攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
-      { id: "coinVacuum", name: "コイン吸引装置", baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
-      { id: "repairUnit", name: "自動修復装置", baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
-      { id: "stormRegulator", name: "雷珠制御装置", baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
+      { id: "laser", name: "魔導レーザー発射装置", unlockStage: 2, baseCost: 160, desc: "一定時間ごとに貫通レーザーを放つ", apply: (p, lv) => p.laserLevel += lv },
+      { id: "multiLauncher", name: "連装ボルト射出装置", unlockStage: 2, baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
+      { id: "aimAssist", name: "射撃制御装置", unlockStage: 2, baseCost: 155, desc: "弾のばらつきを減らし、攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
+      { id: "coinVacuum", name: "コイン吸引装置", unlockStage: 2, baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
+      { id: "towerCore", name: "施設砲台増設", unlockStage: 3, baseCost: 220, desc: "下段施設が弾を撃つ / 施設数と威力アップ", apply: (p, lv) => { p.facilityCount += lv; p.facilityDamage *= Math.pow(1.12, lv); } },
+      { id: "towerRate", name: "施設連射機構", unlockStage: 3, baseCost: 260, desc: "施設の連射速度アップ", apply: (p, lv) => p.facilityRate *= Math.pow(1.08, lv) },
+      { id: "repairUnit", name: "自動修復装置", unlockStage: 3, baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
+      { id: "stormRegulator", name: "雷珠制御装置", unlockStage: 4, baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
     ];
 
     const ENEMY_TYPES = {
@@ -935,6 +949,7 @@
       };
     }
 
+    const STAGE_OVERRIDE = readStageOverride();
     let save = loadSave();
 
     function loadSave() {
@@ -976,11 +991,25 @@
       }
     }
 
-    function saveGame() {
+    function readStageOverride() {
+      try {
+        const raw = new URLSearchParams(location.search).get("stage");
+        const n = safeLevel(raw);
+        return n > 0 && n <= 999 ? n : 0;
+      } catch {
+        return 0;
+      }
+    }
+
+    function activeSelectedStage() {
+      return STAGE_OVERRIDE || save.stage.selected || 1;
+    }
+
+    function saveGame(updateSummary = true) {
       save.coins = clampMoney(save.coins);
       save.best.coins = clampMoney(save.best.coins);
       localStorage.setItem(SAVE_KEY, JSON.stringify(save));
-      renderTitleSummary();
+      if (updateSummary) renderTitleSummary();
     }
 
     /* =========================================================
@@ -1057,11 +1086,11 @@
     function stageConfig(n) {
       const world = Math.floor((n - 1) / 8) + 1;
       const floor = ((n - 1) % 8) + 1;
-      const base = 0.72 + (world - 1) * 0.78 + (floor - 1) * 0.18;
-      const late = n >= 9 ? Math.pow(1.16, n - 8) : 1;
-      const endlessRamp = n >= 25 ? Math.pow(1.1, n - 24) : 1;
-      const bossWall = n % 8 === 0 ? 2.35 : 1;
-      const difficulty = base * late * endlessRamp * bossWall;
+      const worldScale = Math.pow(1.42, world - 1);
+      const floorScale = 1 + (floor - 1) * 0.18;
+      const endlessRamp = n >= 49 ? Math.pow(1.035, n - 48) : 1;
+      const bossWall = n % 8 === 0 ? 1.85 : 1;
+      const difficulty = (0.88 + worldScale * floorScale) * endlessRamp * bossWall;
       return {
         n, world, floor, difficulty,
         duration: n === 1 ? 38 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
@@ -1096,6 +1125,27 @@
     function threatText(g = game) {
       const threat = adaptiveDifficulty(g);
       return `脅威x${threat.hp.toFixed(threat.hp >= 10 ? 0 : 1)}`;
+    }
+    function featureStage() {
+      return STAGE_OVERRIDE || save.stage.unlocked || 1;
+    }
+    function gadgetsUnlocked(stageN = featureStage()) {
+      return stageN >= 2;
+    }
+    function facilitiesUnlocked(stageN = featureStage()) {
+      return stageN >= 3;
+    }
+    function isGadgetVisible(def, stageN = featureStage()) {
+      if (stageN < (def.unlockStage || 2)) return false;
+      const group = GADGET_DEFS.filter(g => (g.unlockStage || 2) === (def.unlockStage || 2));
+      const index = group.indexOf(def);
+      if (index <= 0) return true;
+      const prev = group[index - 1];
+      return (save.gadgets[prev.id] || 0) > 0 || stageN > (def.unlockStage || 2);
+    }
+    function visibleGadgets(stageN = featureStage()) {
+      if (!gadgetsUnlocked(stageN)) return [];
+      return GADGET_DEFS.filter(def => isGadgetVisible(def, stageN));
     }
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
     function shuffle(arr) {
@@ -1144,7 +1194,26 @@
 
     function playerLaneY() {
       const a = arenaRect();
-      return clamp(a.y + a.h * 0.73, a.y + 160, a.y + a.h - 86);
+      return clamp(a.y + a.h * 0.84, a.y + 190, a.y + a.h - 70);
+    }
+
+    function laneCenters(a = arenaRect()) {
+      return [0.18, 0.5, 0.82].map(t => a.x + a.w * t);
+    }
+
+    function laneX(index, a = arenaRect()) {
+      const lanes = laneCenters(a);
+      return lanes[clamp(index, 0, lanes.length - 1)] || lanes[1];
+    }
+
+    function nearestLaneIndex(x, a = arenaRect()) {
+      const lanes = laneCenters(a);
+      let best = 0, bestD = Infinity;
+      lanes.forEach((lane, i) => {
+        const d = Math.abs(lane - x);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return best;
     }
 
     /* =========================================================
@@ -1170,6 +1239,9 @@
       player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
       player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
       player.bulletSpeedBonus = Math.min(40, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
+      player.facilityCount = Math.min(9, Math.max(0, safeLevel(player.facilityCount || 0)));
+      player.facilityDamage = Math.min(1e20, Math.max(1, safeNumber(player.facilityDamage, 1)));
+      player.facilityRate = Math.min(60, Math.max(1, safeNumber(player.facilityRate, 1)));
     }
 
     function buildPlayerStats() {
@@ -1185,6 +1257,9 @@
       base.orbDamageMult = 1;
       base.aimAssist = 0;
       base.bulletSpeedBonus = 0;
+      base.facilityCount = 0;
+      base.facilityDamage = 1;
+      base.facilityRate = 1;
       base.killHeal = 0;
       UPGRADE_DEFS.forEach(u => u.apply(base, save.upgrades[u.id] || 0));
       GADGET_DEFS.forEach(g => g.apply(base, save.gadgets[g.id] || 0));
@@ -1201,7 +1276,7 @@
     function newGame() {
       const p = buildPlayerStats();
       const a = arenaRect();
-      const stage = stageConfig(save.stage.selected || 1);
+      const stage = stageConfig(activeSelectedStage());
       game = {
         state: "playing",
         stage,
@@ -1213,6 +1288,8 @@
         spawn: 0,
         fire: 3,
         laserCd: 0,
+        facilityCd: 0,
+        facilityPulse: 0,
         bossAttackCd: 0,
         bossFreeze: null,
         shopUiTimer: 0,
@@ -1228,6 +1305,7 @@
           fireLevel: p.fireLevel, orbs: p.orbs, poison: p.poison, killHeal: p.killHeal,
           laserLevel: p.laserLevel, orbSpread: p.orbSpread, orbDamageMult: p.orbDamageMult,
           aimAssist: p.aimAssist, bulletSpeedBonus: p.bulletSpeedBonus,
+          facilityCount: p.facilityCount, facilityDamage: p.facilityDamage, facilityRate: p.facilityRate,
           level: 1, xp: 0, nextXp: 24, dashCd: 0, dashTime: 0, lastDir: 1
         },
         enemies: [],
@@ -1249,6 +1327,7 @@
       lastTime = performance.now();
       showScreen("game");
       renderRunShop(true);
+      flashToast(`STAGE ${formatStage(stage.n)} / 敵HP x${stage.difficulty.toFixed(stage.difficulty >= 10 ? 0 : 1)}`, "#f0c66e", 1200);
     }
 
     function applySavedRunUpgrades(g) {
@@ -1259,12 +1338,16 @@
       clampPlayerStats(g.player);
     }
 
-    function syncRunCoins() {
+    function syncRunCoins(force = false) {
       if (!game) return;
       game.runCoins = clampMoney(game.runCoins);
       game.coinsEarned = clampMoney(game.coinsEarned || 0);
       save.coins = game.runCoins;
-      saveGame();
+      const now = performance.now();
+      if (force || !game.nextSaveAt || now >= game.nextSaveAt) {
+        saveGame(false);
+        game.nextSaveAt = now + 1000;
+      }
     }
 
     /* =========================================================
@@ -1341,6 +1424,7 @@
       gainIdleCoin(dt);
       spawnEnemies(dt);
       updateBossAttacks(dt);
+      updateFacilities(dt);
       autoAttack(dt);
       updateLasers(dt);
       updateBullets(dt);
@@ -1373,7 +1457,7 @@
       if (game.bossSpawned && game.bossFreeze) {
         p.dashCd = Math.max(0, p.dashCd - dt);
         p.dashTime = 0;
-        p.x = clamp(game.bossFreeze.x, a.x + p.r, a.x + a.w * 0.42);
+        p.x = clamp(game.bossFreeze.x, a.x + p.r, a.x + a.w - p.r);
         p.y = game.bossFreeze.y;
         input.dashPressed = false;
         return;
@@ -1394,10 +1478,10 @@
         const dashBoost = p.dashTime > 0 ? 2.75 : 1;
         p.x += axis * p.speed * dashBoost * dt;
       } else {
-        const targetX = a.x + a.w * 0.26 + Math.sin(game.distance / 180) * 18;
+        const targetX = laneX(1, a) + Math.sin(game.distance / 180) * 18;
         p.x += (targetX - p.x) * Math.min(1, dt * 2.2);
       }
-      p.x = clamp(p.x, a.x + p.r, a.x + a.w * 0.42);
+      p.x = clamp(p.x, a.x + p.r, a.x + a.w - p.r);
       p.y = playerLaneY() + Math.sin(game.distance / 55) * 4;
     }
 
@@ -1429,10 +1513,10 @@
       const packBase = firstStage
         ? (t < 14 ? 2.2 : t < 30 ? 4.2 : 6.2)
         : (t < 10 ? 5 : t < 24 ? 9 : 13);
-      const interval = Math.max(0.045, intervalBase / Math.sqrt(d));
-      const pack = Math.min(56, Math.ceil(packBase * Math.pow(d, 0.76)));
+      const interval = Math.max(0.07, intervalBase / Math.sqrt(d));
+      const pack = Math.min(18, Math.ceil(packBase * Math.pow(d, 0.58)));
       g.spawn = interval;
-      if (g.enemies.length > Math.min(560, 220 + pressure.spawn * 76)) return;
+      if (g.enemies.length > MAX_ENEMIES) return;
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
@@ -1443,34 +1527,30 @@
     }
 
     function enemySpawnY(a, type, index, pack) {
-      const lane = playerLaneY();
-      if (type === "boss") return lane;
-      const bands = [-0.34, -0.23, -0.12, 0.02, 0.16, 0.29];
-      const band = bands[(index + Math.floor(game.t * 3)) % bands.length];
-      const spread = Math.max(18, a.h * 0.04);
-      return clamp(lane + a.h * band + rand(-spread, spread), a.y + 44, a.y + a.h - 42);
+      if (type === "boss") return a.y + a.h * 0.22;
+      return a.y - rand(28, 120) - (index % 4) * 18;
     }
 
     function bossAnchor() {
       const a = arenaRect();
       return {
-        x: a.x + a.w * 0.78,
-        y: playerLaneY()
+        x: laneX(1, a),
+        y: a.y + a.h * 0.22
       };
     }
 
     function spawnEnemy(type, index = 0, pack = 1) {
       const def = ENEMY_TYPES[type];
       const a = arenaRect();
-      const margin = 34;
-      const x = a.x + a.w + margin + rand(0, 180) + (index % 4) * 18;
+      const lane = type === "boss" ? 1 : (index + Math.floor(game.t * 2)) % 3;
+      const x = type === "boss" ? laneX(1, a) : laneX(lane, a) + rand(-Math.max(12, a.w * 0.035), Math.max(12, a.w * 0.035));
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
       const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
       const scale = stageScale * pressure.hp;
       const damageScale = Math.max(0.55, Math.sqrt(stageScale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035)) * pressure.damage;
       game.enemies.push({
-        type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
+        type, lane, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
         speed: def.speed * 1.08, damage: def.damage * damageScale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
@@ -1486,7 +1566,7 @@
       game.autoSpeed = 0;
       game.bossAttackCd = 0.8;
       game.bossFreeze = {
-        x: clamp(p.x, a.x + p.r, a.x + a.w * 0.34),
+        x: clamp(p.x, a.x + p.r, a.x + a.w - p.r),
         y: playerLaneY()
       };
       spawnEnemy("boss");
@@ -1494,11 +1574,24 @@
       const anchor = bossAnchor();
       boss.x = anchor.x;
       boss.y = anchor.y;
-      boss.hp *= game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2 * BOSS_HP_MULTIPLIER;
+      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2;
+      boss.hp = Math.max(scaledHp, estimateBossDps(p, game) * BOSS_TARGET_SECONDS);
       boss.maxHp = boss.hp;
       flashToast("BOSS: コインドラゴン / 足止め戦", "#d5a84b");
       game.shake = 10;
       beep("rare");
+    }
+
+    function estimateBossDps(p, g = game) {
+      const bulletDps = p.damage * Math.max(1, p.projectiles) * Math.max(0.1, p.fireRate) * (1 + p.crit);
+      const laserCd = Math.max(0.72, 2.9 - (p.laserLevel || 0) * 0.038);
+      const laserDps = p.laserLevel > 0 ? p.damage * (1.2 + p.laserLevel * 0.09) / laserCd : 0;
+      const facilitySlotsCount = facilitySlots(g).length;
+      const facilityDps = facilitiesUnlocked(g.stage.n)
+        ? facilitySlotsCount * p.damage * 0.55 * (p.facilityDamage || 1) * (p.facilityRate || 1) / 1.15
+        : 0;
+      const auraDps = (p.poison || 0) * p.damage * 0.045 + (p.orbs || 0) * 5.8 * (p.orbDamageMult || 1);
+      return Math.max(80, (bulletDps + laserDps + facilityDps + auraDps) * 0.78);
     }
 
     function updateBossAttacks(dt) {
@@ -1562,6 +1655,68 @@
       beep("shoot");
     }
 
+    function facilitySlots(g = game) {
+      if (!g || !facilitiesUnlocked(g.stage.n)) return [];
+      const p = g.player;
+      const a = arenaRect();
+      const lanes = laneCenters(a);
+      const count = Math.min(3, 1 + safeLevel(p.facilityCount || 0));
+      const start = count === 1 ? 1 : 0;
+      return Array.from({ length: count }, (_, i) => {
+        const lane = start + i;
+        return {
+          lane,
+          x: lanes[lane] || lanes[1],
+          y: playerLaneY() + 34
+        };
+      });
+    }
+
+    function updateFacilities(dt) {
+      const g = game, p = g.player;
+      const slots = facilitySlots(g);
+      if (!slots.length) return;
+      g.facilityCd -= dt;
+      g.facilityPulse = Math.max(0, (g.facilityPulse || 0) - dt * 6);
+      if (g.facilityCd > 0) return;
+      if (g.bullets.length >= MAX_BULLETS) return;
+
+      const damage = p.damage * 0.55 * (p.facilityDamage || 1);
+      const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
+      let fired = 0;
+      for (const slot of slots) {
+        const target = facilityTarget(slot);
+        if (!target || g.bullets.length >= MAX_BULLETS) continue;
+        const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
+        const aim = predictedAimPoint(target, lead);
+        const a = Math.atan2(aim.y - slot.y, aim.x - slot.x);
+        g.bullets.push({
+          x: slot.x, y: slot.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+          r: 6, life: 2.6, age: 0, speed, facility: true,
+          damage, crit: false, fire: 0
+        });
+        fired++;
+      }
+      if (fired > 0) {
+        g.facilityPulse = 1;
+        g.facilityCd = Math.max(0.16, 1.15 / (p.facilityRate || 1));
+      }
+    }
+
+    function facilityTarget(slot) {
+      let target = null;
+      let best = Infinity;
+      for (const e of targetableEnemies()) {
+        const laneBias = (e.lane === slot.lane ? 0.55 : 1.25);
+        const d = ((e.x - slot.x) ** 2 + (e.y - slot.y) ** 2) * laneBias;
+        if (d < best) {
+          best = d;
+          target = e;
+        }
+      }
+      return target;
+    }
+
     function autoAttack(dt) {
       const g = game, p = g.player;
       g.fire = Math.min(24, g.fire + Math.max(0.1, p.fireRate) * dt);
@@ -1576,7 +1731,13 @@
         g.fire -= 1;
         bursts++;
       }
-      if (bursts > 0) beep("shoot");
+      if (bursts > 0) {
+        const now = performance.now();
+        if (!g.nextShootBeep || now >= g.nextShootBeep) {
+          beep("shoot");
+          g.nextShootBeep = now + 120;
+        }
+      }
     }
 
     function fireVolley() {
@@ -1592,7 +1753,9 @@
       const targets = [...threats, ...enemies]
         .slice(0, Math.max(1, Math.min(48, p.projectiles)));
       if (!targets.length) return false;
-      const count = Math.max(1, Math.min(44, p.projectiles));
+      const room = Math.max(0, MAX_BULLETS - g.bullets.length);
+      if (room <= 0) return true;
+      const count = Math.max(1, Math.min(32, p.projectiles, room));
       const damageScale = Math.max(1, p.projectiles / count);
       const speed = shotSpeed(p);
       const spreadStep = shotSpreadStep(p);
@@ -1634,7 +1797,9 @@
 
     function isTargetAhead(enemy, p = game.player) {
       const a = arenaRect();
-      return enemy && enemy.hp > 0 && enemy.x > p.x + 18 && enemy.x < a.x + a.w + 340;
+      return enemy && enemy.hp > 0 &&
+        enemy.x > a.x - 80 && enemy.x < a.x + a.w + 80 &&
+        enemy.y > a.y - 140 && enemy.y < p.y + 40;
     }
 
     function targetableEnemies(g = game, p = game.player) {
@@ -1642,7 +1807,9 @@
     }
 
     function targetableBossShots(g = game, p = game.player) {
-      return (g.bossShots || []).filter(s => s.hp > 0 && (s.age || 0) > 0.28 && s.x > p.x + 8);
+      const a = arenaRect();
+      return (g.bossShots || []).filter(s => s.hp > 0 && (s.age || 0) > 0.28 &&
+        s.y < p.y - 4 && s.x > a.x - 80 && s.x < a.x + a.w + 80);
     }
 
     function predictedAimPoint(target, lead) {
@@ -1653,10 +1820,9 @@
         };
       }
       const drift = (target.speed || 0) + (game ? game.autoSpeed * 0.62 : 0);
-      const minX = game ? game.player.x + 30 : target.x;
       return {
-        x: Math.max(minX, target.x - drift * lead),
-        y: target.y
+        x: target.x,
+        y: target.y + drift * lead
       };
     }
 
@@ -1776,9 +1942,10 @@
           }
           continue;
         }
+        const targetX = laneX(e.lane ?? nearestLaneIndex(e.x), a);
+        e.x += (targetX - e.x) * Math.min(1, dt * 1.4);
+        e.y += (e.speed * (0.82 + Math.min(0.35, g.stage.n * 0.004))) * dt;
         const d = len(p.x - e.x, p.y - e.y);
-        e.x -= (e.speed + g.autoSpeed * 0.62) * dt;
-        e.y += (p.y - e.y) / d * e.speed * 0.28 * dt;
         e.hit = Math.max(0, e.hit - dt * 6);
         if (e.burn > 0) {
           e.burn -= dt;
@@ -1788,7 +1955,7 @@
           touchDamage += e.damage;
           g.shake = save.settings.shake ? 4 : 0;
         }
-        if (e.x < a.x - 90 && e.type !== "boss") {
+        if (e.y > a.y + a.h + 60 && e.type !== "boss") {
           touchDamage += e.damage * 0.5;
           g.enemies.splice(i, 1);
         } else if (e.hp <= 0) {
@@ -1851,7 +2018,9 @@
       e.hp -= dmg;
       e.hit = 1;
       game.damage = Math.min(MAX_STAT, safeNumber(game.damage, 0) + dmg);
-      if (text && save.settings.damageNumbers) addText(e.x, e.y - e.r, formatMoney(Math.round(dmg)), color);
+      if (text && save.settings.damageNumbers && (e.type === "boss" || Math.random() < 0.35)) {
+        addText(e.x, e.y - e.r, formatMoney(Math.round(dmg)), color);
+      }
     }
 
     function killEnemy(e) {
@@ -1943,7 +2112,7 @@
       clampPlayerStats(game.player);
       game.skills.push(`${skill.name} +${levels}`);
       save.codex.skills[id] = true;
-      syncRunCoins();
+      syncRunCoins(true);
       renderRunShop(true);
       beep("coin");
       if (screen === "levelUp") showScreen("game");
@@ -1975,11 +2144,13 @@
       const cleared = g.stage.n;
       g.runCoins = addMoney(g.runCoins, g.stage.reward);
       g.coinsEarned = addMoney(g.coinsEarned, g.stage.reward);
-      syncRunCoins();
+      syncRunCoins(true);
       save.codex.achievements.boss = true;
-      save.stage.clears[cleared] = true;
-      save.stage.unlocked = Math.max(save.stage.unlocked || 1, cleared + 1);
-      save.stage.selected = save.stage.unlocked;
+      if (!STAGE_OVERRIDE) {
+        save.stage.clears[cleared] = true;
+        save.stage.unlocked = Math.max(save.stage.unlocked || 1, cleared + 1);
+        save.stage.selected = save.stage.unlocked;
+      }
       g.stage = stageConfig(cleared + 1);
       g.t = 0;
       g.spawn = 0;
@@ -2069,9 +2240,11 @@
       save.best.coins = Math.max(clampMoney(save.best.coins), coins);
       if (reason === "victory") {
         save.codex.achievements.boss = true;
-        save.stage.clears[game.stage.n] = true;
-        save.stage.unlocked = Math.max(save.stage.unlocked || 1, game.stage.n);
-        save.stage.selected = save.stage.unlocked;
+        if (!STAGE_OVERRIDE) {
+          save.stage.clears[game.stage.n] = true;
+          save.stage.unlocked = Math.max(save.stage.unlocked || 1, game.stage.n);
+          save.stage.selected = save.stage.unlocked;
+        }
       }
       if ((game.totalTime || game.t) >= 60) save.codex.achievements.minute = true;
       if (game.kills >= 100) save.codex.achievements.hunter = true;
@@ -2111,6 +2284,7 @@
         ctx.translate(sx, sy);
         drawDrops();
         drawEnemies();
+        drawFacilities();
         drawPlayer();
         drawBossShots();
         drawBullets();
@@ -2152,6 +2326,18 @@
         ctx.stroke();
       }
       if (game) {
+        const lanes = laneCenters(a);
+        ctx.strokeStyle = "rgba(240,198,110,0.24)";
+        ctx.lineWidth = 2;
+        for (let i = 0; i < 2; i++) {
+          const x = (lanes[i] + lanes[i + 1]) / 2;
+          ctx.beginPath();
+          ctx.moveTo(x, a.y);
+          ctx.lineTo(x, a.y + a.h);
+          ctx.stroke();
+        }
+        ctx.fillStyle = "rgba(240,198,110,0.05)";
+        lanes.forEach(x => ctx.fillRect(x - a.w * 0.105, a.y, a.w * 0.21, a.h));
         ctx.strokeStyle = "rgba(240,198,110,0.22)";
         ctx.setLineDash([10, 12]);
         ctx.beginPath();
@@ -2206,11 +2392,32 @@
       ctx.fillStyle = "#6f8db8";
       ctx.fillRect(p.x - 14, p.y - 6, 9, 16);
       ctx.fillStyle = "#4a2d18";
-      ctx.fillRect(p.x + 8, p.y - 6, 13, 5);
+      ctx.fillRect(p.x + 7, p.y - 25, 6, 19);
       ctx.strokeStyle = "#fff3d6";
       ctx.lineWidth = 2;
       ctx.strokeRect(p.x - 10, p.y - 15, 20, 24);
       ctx.restore();
+    }
+
+    function drawFacilities() {
+      const slots = facilitySlots(game);
+      if (!slots.length) return;
+      const pulse = game.facilityPulse || 0;
+      for (const slot of slots) {
+        ctx.save();
+        ctx.fillStyle = "#302015";
+        ctx.fillRect(slot.x - 20, slot.y - 16, 40, 32);
+        ctx.fillStyle = "#6f8db8";
+        ctx.fillRect(slot.x - 13, slot.y - 24 - pulse * 3, 26, 16);
+        ctx.fillStyle = "#f0c66e";
+        ctx.fillRect(slot.x - 5, slot.y - 34 - pulse * 8, 10, 20);
+        ctx.strokeStyle = "#fff3d6";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(slot.x - 20, slot.y - 16, 40, 32);
+        ctx.globalAlpha = 0.18 + pulse * 0.22;
+        circle(slot.x, slot.y - 28, 22 + pulse * 12, "#f0c66e", false, 3);
+        ctx.restore();
+      }
     }
 
     function drawEnemies() {
@@ -2257,7 +2464,7 @@
 
     function drawBullets() {
       for (const b of game.bullets) {
-        const color = b.fire ? "#cf6f52" : "#f0c66e";
+        const color = b.facility ? "#84c7a1" : (b.fire ? "#cf6f52" : "#f0c66e");
         const angle = Math.atan2(b.vy, b.vx);
         const tail = Math.max(28, Math.min(54, (b.speed || 760) * 0.04));
         const tx = Math.cos(angle) * tail;
@@ -2366,13 +2573,15 @@
     }
 
     function burst(x, y, color, n) {
-      for (let i = 0; i < n; i++) {
+      const room = Math.max(0, MAX_PARTICLES - game.particles.length);
+      for (let i = 0; i < Math.min(n, room); i++) {
         const a = rand(0, TAU), s = rand(70, 220);
         game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rand(2, 5), color, life: rand(0.25, 0.55), max: 0.55 });
       }
     }
 
     function addText(x, y, text, color) {
+      if (game.texts.length >= MAX_TEXTS) game.texts.splice(0, game.texts.length - MAX_TEXTS + 1);
       game.texts.push({ x, y, text, color, vy: -36, life: 0.75, max: 0.75 });
     }
 
@@ -2424,10 +2633,11 @@
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
         ? "ボス戦。足止め中 / 赤弾は撃ち落とせます"
-        : `ボスまで ${fmtTime(remaining)} / ${threatText(game)} / 強化で敵も強化`;
+        : `上から侵攻 / ボスまで ${fmtTime(remaining)} / ${threatText(game)} / Stage3から施設砲台`;
       $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
-      const expectedRows = SKILL_POOL.length + GADGET_DEFS.length;
+      const gadgets = visibleGadgets(game.stage.n);
+      const expectedRows = SKILL_POOL.length + gadgets.length;
       if (!forceList && list.querySelectorAll("[data-shop-row]").length === expectedRows) {
         SKILL_POOL.forEach(skill => {
           const row = list.querySelector(`[data-skill-row="${skill.id}"]`);
@@ -2443,7 +2653,7 @@
             btn.textContent = `+${amount} ${formatMoney(cost)}C`;
           });
         });
-        GADGET_DEFS.forEach(gadget => {
+        gadgets.forEach(gadget => {
           const row = list.querySelector(`[data-gadget-row="${gadget.id}"]`);
           if (!row) return;
           const lvEl = row.querySelector(".gadget-lv");
@@ -2476,7 +2686,7 @@
           </div>`;
       }).join("");
 
-      const gadgetHtml = GADGET_DEFS.map(gadget => {
+      const gadgetHtml = gadgets.map(gadget => {
         const lv = save.gadgets[gadget.id] || 0;
         const buttons = [1, 10].map(amount => {
           const cost = gadgetCost(gadget, amount);
@@ -2496,8 +2706,8 @@
       list.innerHTML = `
         <div class="tiny shop-section">戦闘強化</div>
         ${skillHtml}
-        <div class="tiny shop-section" style="color:var(--lime);">戦闘装置</div>
-        ${gadgetHtml}`;
+        <div class="tiny shop-section" style="color:var(--lime);">${gadgetsUnlocked(game.stage.n) ? "戦闘装置" : "戦闘装置: Stage 1-2で解放"}</div>
+        ${gadgetHtml || `<div class="tiny">Stage ${formatStage(2)} クリア後、装置が1つずつ並びます。</div>`}`;
     }
 
     function renderTitleSummary() {
@@ -2512,11 +2722,17 @@
       `;
       const c = CHARACTERS.knight;
       $("charSummary").innerHTML = `${c.name}<br>高いHPで、左右移動と自動攻撃に向いた最初の冒険者です。`;
-      const selected = save.stage.selected || 1;
+      const selected = activeSelectedStage();
+      const cfg = stageConfig(selected);
+      const unlocks = [
+        selected >= 2 ? "2面: 戦闘装置" : "2面で戦闘装置解放",
+        selected >= 3 ? "3面: 施設砲台" : "3面で施設解放"
+      ].join(" / ");
       $("stageSummary").innerHTML = `
-        選択中: <b>${formatStage(selected)}</b><br>
+        選択中: <b>${formatStage(selected)}</b>${STAGE_OVERRIDE ? " <span class='pill'>TEST</span>" : ""}<br>
         解放済み: <b>${formatStage(save.stage.unlocked || 1)}</b><br>
-        ステージ: <b>無限</b><br>
+        敵HP目安: <b>x${cfg.difficulty.toFixed(cfg.difficulty >= 10 ? 0 : 1)}</b><br>
+        解放: <b>${unlocks}</b><br>
         クリア済み: <b>${Object.keys(save.stage.clears || {}).length}</b>
       `;
     }
@@ -2567,6 +2783,8 @@
     function buyGadget(id, amount = 1) {
       const gadget = GADGET_DEFS.find(x => x.id === id);
       if (!gadget) return;
+      const stageN = game && screen === "game" ? game.stage.n : featureStage();
+      if (!isGadgetVisible(gadget, stageN)) return;
       const levels = Math.max(1, safeLevel(amount) || 1);
       const cost = gadgetCost(gadget, levels);
       const buyingInRun = game && screen === "game" && game.state === "playing";
@@ -2585,7 +2803,7 @@
         gadget.apply(game.player, levels);
         clampPlayerStats(game.player);
         game.skills.push(`${gadget.name} +${levels}`);
-        syncRunCoins();
+        syncRunCoins(true);
         renderRunShop(true);
         updateHud();
         if (save.settings.damageNumbers) addText(game.player.x, game.player.y - 62, `${gadget.name} +${levels}`, "#a9d46a");
@@ -2750,7 +2968,11 @@
       e.preventDefault();
       const action = el.dataset.action;
       if (action === "start" || action === "retry") newGame();
-      if (action === "title") { game = null; showScreen("title"); }
+      if (action === "title") {
+        if (game) syncRunCoins(true);
+        game = null;
+        showScreen("title");
+      }
       if (action === "upgrades") showScreen("upgrades");
       if (action === "equipment") showScreen("equipment");
       if (action === "codex") showScreen("codex");
