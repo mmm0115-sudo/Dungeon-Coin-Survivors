@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.3</div>
+          <div class="version-badge" id="versionText">v0.9.4</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,7 +766,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.3";
+    const APP_VERSION = "v0.9.4";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
@@ -1283,7 +1283,7 @@
         t: 0,
         totalTime: 0,
         distance: 0,
-        autoSpeed: 170,
+        autoSpeed: 105,
         shake: 0,
         spawn: 0,
         fire: 3,
@@ -1298,7 +1298,7 @@
         bossSpawned: false,
         resultReason: "defeat",
         player: {
-          x: a.x + a.w * 0.26, y: playerLaneY(), r: 14,
+          x: laneX(1, a), y: playerLaneY(), r: 14,
           hp: p.hp, maxHp: p.maxHp, speed: p.speed, damage: p.damage,
           fireRate: p.fireRate, projectiles: p.projectiles, crit: p.crit,
           magnet: p.magnet, coinMult: p.coinMult, rare: p.rare,
@@ -1477,12 +1477,9 @@
       if (axis !== 0) {
         const dashBoost = p.dashTime > 0 ? 2.75 : 1;
         p.x += axis * p.speed * dashBoost * dt;
-      } else {
-        const targetX = laneX(1, a) + Math.sin(game.distance / 180) * 18;
-        p.x += (targetX - p.x) * Math.min(1, dt * 2.2);
       }
       p.x = clamp(p.x, a.x + p.r, a.x + a.w - p.r);
-      p.y = playerLaneY() + Math.sin(game.distance / 55) * 4;
+      p.y = playerLaneY();
     }
 
     function gainIdleCoin(dt) {
@@ -1528,7 +1525,7 @@
 
     function enemySpawnY(a, type, index, pack) {
       if (type === "boss") return a.y + a.h * 0.22;
-      return a.y - rand(28, 120) - (index % 4) * 18;
+      return a.y + 28 + (index % 3) * 18;
     }
 
     function bossAnchor() {
@@ -1543,7 +1540,7 @@
       const def = ENEMY_TYPES[type];
       const a = arenaRect();
       const lane = type === "boss" ? 1 : (index + Math.floor(game.t * 2)) % 3;
-      const x = type === "boss" ? laneX(1, a) : laneX(lane, a) + rand(-Math.max(12, a.w * 0.035), Math.max(12, a.w * 0.035));
+      const x = laneX(lane, a);
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
       const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
@@ -1761,17 +1758,17 @@
       const spreadStep = shotSpreadStep(p);
       for (let i = 0; i < count; i++) {
         const target = targets[i % targets.length];
-        const repeat = Math.floor(i / targets.length);
-        const repeatCount = Math.ceil(count / targets.length);
-        const offset = repeat - (repeatCount - 1) / 2;
-        const spread = offset * spreadStep;
-        const lead = aimLead(p, target, speed);
+        const offset = i - (count - 1) / 2;
+        const muzzleX = p.x + clamp(offset, -8, 8) * 7;
+        const muzzleY = p.y - 22 - Math.abs(offset) * 0.7;
+        const spread = offset * spreadStep * 0.75;
+        const lead = aimLead({ x: muzzleX, y: muzzleY }, target, speed);
         const aim = predictedAimPoint(target, lead);
         aim.y += clamp(offset * target.r * 0.28, -target.r * 0.72, target.r * 0.72);
-        const a = Math.atan2(aim.y - p.y, aim.x - p.x) + spread;
+        const a = Math.atan2(aim.y - muzzleY, aim.x - muzzleX) + spread;
         const crit = Math.random() < p.crit;
         g.bullets.push({
-          x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+          x: muzzleX, y: muzzleY, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 7, life: 3.2, age: 0, speed,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
@@ -1799,7 +1796,7 @@
       const a = arenaRect();
       return enemy && enemy.hp > 0 &&
         enemy.x > a.x - 80 && enemy.x < a.x + a.w + 80 &&
-        enemy.y > a.y - 140 && enemy.y < p.y + 40;
+        enemy.y > a.y + enemy.r * 0.5 && enemy.y < p.y + 40;
     }
 
     function targetableEnemies(g = game, p = game.player) {
@@ -2299,8 +2296,8 @@
     function drawGrid() {
       const a = game ? arenaRect() : { x: 0, y: 0, w: W, h: H };
       const step = 48;
-      const ox = game ? -(game.distance % step) : 0;
-      const oy = game ? -((game.distance * 0.16) % step) : 0;
+      const ox = 0;
+      const oy = game ? (game.distance % step) : 0;
       ctx.fillStyle = "#17100a";
       ctx.fillRect(a.x, a.y, a.w, a.h);
       ctx.strokeStyle = "rgba(232,198,124,0.09)";
@@ -2311,7 +2308,7 @@
         ctx.lineTo(Math.floor(x) + 0.5, a.y + a.h);
         ctx.stroke();
       }
-      for (let y = a.y + oy; y < a.y + a.h; y += step) {
+      for (let y = a.y + oy - step; y < a.y + a.h; y += step) {
         ctx.beginPath();
         ctx.moveTo(a.x, Math.floor(y) + 0.5);
         ctx.lineTo(a.x + a.w, Math.floor(y) + 0.5);
@@ -2319,7 +2316,7 @@
       }
       ctx.strokeStyle = "rgba(0,0,0,0.26)";
       for (let x = a.x + ox + 12; x < a.x + a.w; x += step * 2) {
-        const y = a.y + ((x * 1.7 + (game ? game.distance : 0)) % Math.max(80, a.h - 40));
+        const y = a.y + ((x * 1.7 + (game ? game.distance * 0.55 : 0)) % Math.max(80, a.h - 40));
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x + 18, y + 6);
@@ -2686,7 +2683,7 @@
           </div>`;
       }).join("");
 
-      const gadgetHtml = gadgets.map(gadget => {
+      const gadgetRows = listItems => listItems.map(gadget => {
         const lv = save.gadgets[gadget.id] || 0;
         const buttons = [1, 10].map(amount => {
           const cost = gadgetCost(gadget, amount);
@@ -2702,12 +2699,18 @@
             <div class="shop-actions">${buttons}</div>
           </div>`;
       }).join("");
+      const combatGadgets = gadgets.filter(gadget => (gadget.unlockStage || 2) < 3);
+      const facilityGadgets = gadgets.filter(gadget => (gadget.unlockStage || 2) >= 3);
+      const combatHtml = gadgetRows(combatGadgets);
+      const facilityHtml = gadgetRows(facilityGadgets);
 
       list.innerHTML = `
         <div class="tiny shop-section">戦闘強化</div>
         ${skillHtml}
         <div class="tiny shop-section" style="color:var(--lime);">${gadgetsUnlocked(game.stage.n) ? "戦闘装置" : "戦闘装置: Stage 1-2で解放"}</div>
-        ${gadgetHtml || `<div class="tiny">Stage ${formatStage(2)} クリア後、装置が1つずつ並びます。</div>`}`;
+        ${combatHtml || `<div class="tiny">Stage ${formatStage(2)} クリア後、装置が1つずつ並びます。</div>`}
+        <div class="tiny shop-section" style="color:var(--cyan);">${facilitiesUnlocked(game.stage.n) ? "施設" : "施設: Stage 1-3で解放"}</div>
+        ${facilityHtml || `<div class="tiny">施設は自動砲台です。解放後、砲台数・威力・連射を装置で伸ばせます。</div>`}`;
     }
 
     function renderTitleSummary() {
