@@ -644,7 +644,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.0</div>
+          <div class="version-badge" id="versionText">v0.9.1</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -758,7 +758,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.0";
+    const APP_VERSION = "v0.9.1";
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -856,7 +856,7 @@
     const GADGET_DEFS = [
       { id: "laser", name: "魔導レーザー発射装置", baseCost: 160, desc: "一定時間ごとに貫通レーザーを放つ", apply: (p, lv) => p.laserLevel += lv },
       { id: "multiLauncher", name: "連装ボルト射出装置", baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
-      { id: "aimAssist", name: "自動照準装置", baseCost: 155, desc: "弾の追尾性能と攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
+      { id: "aimAssist", name: "射撃制御装置", baseCost: 155, desc: "弾のばらつきを減らし、攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
       { id: "coinVacuum", name: "コイン吸引装置", baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
       { id: "repairUnit", name: "自動修復装置", baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
       { id: "stormRegulator", name: "雷珠制御装置", baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
@@ -1496,18 +1496,21 @@
       const count = Math.max(1, Math.min(44, p.projectiles));
       const damageScale = Math.max(1, p.projectiles / count);
       const speed = shotSpeed(p);
+      const spreadStep = shotSpreadStep(p);
       for (let i = 0; i < count; i++) {
         const target = targets[i % targets.length];
         const repeat = Math.floor(i / targets.length);
         const repeatCount = Math.ceil(count / targets.length);
-        const spread = (repeat - (repeatCount - 1) / 2) * 0.045;
+        const offset = repeat - (repeatCount - 1) / 2;
+        const spread = offset * spreadStep;
         const lead = aimLead(p, target, speed);
         const aim = predictedAimPoint(target, lead);
+        aim.y += clamp(offset * target.r * 0.28, -target.r * 0.72, target.r * 0.72);
         const a = Math.atan2(aim.y - p.y, aim.x - p.x) + spread;
         const crit = Math.random() < p.crit;
         g.bullets.push({
           x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 7, life: 3.4, age: 0, target, speed, turn: 10 + Math.min(18, (p.aimAssist || 0) * 0.6) + Math.min(5, p.fireRate * 0.018),
+          r: 7, life: 3.2, age: 0, speed,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
@@ -1516,8 +1519,13 @@
 
     function shotSpeed(p) {
       const rateBonus = Math.max(0, Math.log2(Math.max(1, p.fireRate / 2.15))) * 0.18;
-      const deviceBonus = Math.min(4.2, p.bulletSpeedBonus || 0);
-      return 760 * (1 + rateBonus + deviceBonus);
+      const deviceBonus = Math.min(1.15, p.bulletSpeedBonus || 0);
+      return Math.min(1900, 760 * (1 + rateBonus + deviceBonus));
+    }
+
+    function shotSpreadStep(p) {
+      const assist = Math.min(30, p.aimAssist || 0);
+      return Math.max(0.006, 0.026 - assist * 0.00065);
     }
 
     function aimLead(p, target, speed) {
@@ -1532,19 +1540,6 @@
 
     function targetableEnemies(g = game, p = game.player) {
       return g.enemies.filter(e => isTargetAhead(e, p));
-    }
-
-    function nearestTargetFrom(x, y) {
-      let target = null;
-      let best = Infinity;
-      for (const e of targetableEnemies()) {
-        const d = (e.x - x) ** 2 + (e.y - y) ** 2;
-        if (d < best) {
-          best = d;
-          target = e;
-        }
-      }
-      return target;
     }
 
     function predictedAimPoint(target, lead) {
@@ -1607,23 +1602,8 @@
       const a = arenaRect();
       for (let i = g.bullets.length - 1; i >= 0; i--) {
         const b = g.bullets[i];
-        if (!isTargetAhead(b.target, game.player)) {
-          b.target = nearestTargetFrom(b.x, b.y);
-          if (!b.target) {
-            b.life = Math.min(b.life, 0.18);
-          }
-        }
-        if (b.target && g.enemies.includes(b.target) && b.target.hp > 0) {
-          const aim = predictedAimPoint(b.target, clamp(Math.hypot(b.target.x - b.x, b.target.y - b.y) / Math.max(1, b.speed) * 0.7, 0.06, 0.42));
-          const desired = Math.atan2(aim.y - b.y, aim.x - b.x);
-          const current = Math.atan2(b.vy, b.vx);
-          let delta = desired - current;
-          while (delta > Math.PI) delta -= TAU;
-          while (delta < -Math.PI) delta += TAU;
-          const next = current + clamp(delta, -b.turn * dt, b.turn * dt);
-          b.vx = Math.cos(next) * b.speed;
-          b.vy = Math.sin(next) * b.speed;
-        }
+        const prevX = b.x;
+        const prevY = b.y;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         b.age = (b.age || 0) + dt;
@@ -1632,10 +1612,10 @@
           g.bullets.splice(i, 1);
           continue;
         }
-        if (b.age < 0.11) continue;
+        if (b.age < 0.025) continue;
         for (const e of g.enemies) {
           const rr = e.r + b.r;
-          if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < rr * rr) {
+          if (pointToSegmentDistance(e.x, e.y, prevX, prevY, b.x, b.y) < rr) {
             damageEnemy(e, b.damage, b.crit ? "#f0c66e" : "#fff3d6");
             if (b.fire) e.burn = Math.max(e.burn, 1.8 + b.fire * 0.35);
             g.bullets.splice(i, 1);
