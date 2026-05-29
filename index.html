@@ -732,6 +732,86 @@
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
     const TAU = Math.PI * 2;
 
+    // =========================================================
+    // 大きい数対策
+    // - Infinityになると購入判定が全部壊れるので、内部値を必ず有限値に丸めます。
+    // - 表示だけ「万・億・兆・京...」に変換します。
+    // - 価格は指数ではなく二次成長にして、Lvが増えてもInfinity化しません。
+    // =========================================================
+    const MAX_MONEY = 1e150;
+    const MAX_COST = 1e120;
+    const MAX_STAT = 1e80;
+    const MONEY_UNITS = [
+      "", "万", "億", "兆", "京", "垓", "秭", "穣", "溝", "澗",
+      "正", "載", "極", "恒河沙", "阿僧祇", "那由他", "不可思議", "無量大数"
+    ];
+
+    function safeNumber(value, fallback = 0) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function safeLevel(value) {
+      return Math.max(0, Math.floor(safeNumber(value, 0)));
+    }
+
+    function clampMoney(value) {
+      const n = safeNumber(value, 0);
+      if (n <= 0) return 0;
+      return Math.min(MAX_MONEY, Math.floor(n));
+    }
+
+    function clampCost(value) {
+      const n = safeNumber(value, MAX_COST);
+      if (n <= 0) return 1;
+      return Math.min(MAX_COST, Math.max(1, Math.ceil(n)));
+    }
+
+    function addMoney(current, amount) {
+      return clampMoney(safeNumber(current, 0) + safeNumber(amount, 0));
+    }
+
+    function subMoney(current, amount) {
+      return clampMoney(safeNumber(current, 0) - safeNumber(amount, 0));
+    }
+
+    function canAfford(wallet, cost) {
+      return clampMoney(wallet) >= clampCost(cost);
+    }
+
+    function formatMoney(value) {
+      const n = clampMoney(value);
+      if (n < 10000) return String(n);
+      const exp = Math.floor(Math.log10(n));
+      const unitIndex = Math.floor(exp / 4);
+      if (unitIndex >= MONEY_UNITS.length) {
+        return n.toExponential(2).replace("e+", "e");
+      }
+      const unitValue = Math.pow(10000, unitIndex);
+      const scaled = n / unitValue;
+      const digits = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2;
+      return `${scaled.toFixed(digits).replace(/\.0+$|0+$/g, "")}${MONEY_UNITS[unitIndex]}`;
+    }
+
+    function formatGain(value) {
+      return `+${formatMoney(value)}C`;
+    }
+
+    function clampPlayerStats(player) {
+      if (!player) return;
+      player.maxHp = Math.min(MAX_STAT, Math.max(1, safeNumber(player.maxHp, 1)));
+      player.hp = Math.min(player.maxHp, Math.max(0, safeNumber(player.hp, player.maxHp)));
+      player.damage = Math.min(MAX_STAT, Math.max(1, safeNumber(player.damage, 1)));
+      player.fireRate = Math.min(80, Math.max(0.1, safeNumber(player.fireRate, 1)));
+      player.coinMult = Math.min(1e30, Math.max(0, safeNumber(player.coinMult, 1)));
+      player.magnet = Math.min(20000, Math.max(0, safeNumber(player.magnet, 0)));
+      player.projectiles = Math.min(200, Math.max(1, safeLevel(player.projectiles || 1)));
+      player.poison = Math.min(500, Math.max(0, safeLevel(player.poison || 0)));
+      player.orbs = Math.min(200, Math.max(0, safeLevel(player.orbs || 0)));
+      player.poisonBoost = Math.min(1e20, Math.max(1, safeNumber(player.poisonBoost, 1)));
+      player.killHeal = Math.min(10000, Math.max(0, safeNumber(player.killHeal, 0)));
+    }
+
     const CHARACTERS = {
       knight: { id: "knight", name: "Knight", hp: 240, speed: 220, damage: 42, fireRate: 2.05, crit: 0.07, magnet: 170, coin: 1, rare: 0 }
       // 追加例: mage / ninja / gambler をここに足すだけで設計上は拡張できます。
@@ -849,24 +929,29 @@
         const d = defaultSave();
         const upgrades = { ...d.upgrades };
         Object.entries(data.upgrades || {}).forEach(([id, lv]) => {
-          if (id in upgrades) upgrades[id] = lv;
+          if (id in upgrades) upgrades[id] = safeLevel(lv);
         });
         const runUpgrades = { ...d.runUpgrades };
         Object.entries(data.runUpgrades || {}).forEach(([id, lv]) => {
-          if (id in runUpgrades) runUpgrades[id] = lv;
+          if (id in runUpgrades) runUpgrades[id] = safeLevel(lv);
         });
         const gadgets = { ...d.gadgets };
         Object.entries(data.gadgets || {}).forEach(([id, lv]) => {
-          if (id in gadgets) gadgets[id] = lv;
+          if (id in gadgets) gadgets[id] = safeLevel(lv);
         });
+        const best = { ...d.best, ...(data.best || {}) };
+        best.time = safeNumber(best.time, 0);
+        best.kills = safeLevel(best.kills);
+        best.coins = clampMoney(best.coins);
         return {
           ...d,
           ...data,
+          coins: clampMoney(data.coins),
           upgrades,
           runUpgrades,
           gadgets,
           codex: { ...d.codex, ...(data.codex || {}) },
-          best: { ...d.best, ...(data.best || {}) },
+          best,
           stage: { ...d.stage, ...(data.stage || {}), clears: { ...d.stage.clears, ...((data.stage && data.stage.clears) || {}) } },
           settings: { ...d.settings, ...(data.settings || {}) }
         };
@@ -876,6 +961,8 @@
     }
 
     function saveGame() {
+      save.coins = clampMoney(save.coins);
+      save.best.coins = clampMoney(save.best.coins);
       localStorage.setItem(SAVE_KEY, JSON.stringify(save));
       renderTitleSummary();
     }
@@ -1039,6 +1126,7 @@
         if (def) def.apply(base, e.value);
       });
       base.hp = base.maxHp;
+      clampPlayerStats(base);
       return base;
     }
 
@@ -1076,7 +1164,7 @@
         texts: [],
         skills: [],
         shopLevels: Object.fromEntries(SKILL_POOL.map(s => [s.id, save.runUpgrades[s.id] || 0])),
-        runCoins: Math.max(0, Math.floor(save.coins || 0)),
+        runCoins: clampMoney(save.coins),
         coinsEarned: 0,
         kills: 0,
         damage: 0,
@@ -1090,16 +1178,19 @@
 
     function applySavedRunUpgrades(g) {
       SKILL_POOL.forEach(skill => {
-        const lv = save.runUpgrades[skill.id] || 0;
+        const lv = safeLevel(save.runUpgrades[skill.id]);
         if (lv <= 0) return;
         skill.run(g, lv);
+        clampPlayerStats(g.player);
         g.skills.push(`${skill.name} +${lv}`);
       });
     }
 
     function syncRunCoins() {
       if (!game) return;
-      save.coins = Math.max(0, Math.floor(game.runCoins || 0));
+      game.runCoins = clampMoney(game.runCoins);
+      game.coinsEarned = clampMoney(game.coinsEarned);
+      save.coins = game.runCoins;
       saveGame();
     }
 
@@ -1205,14 +1296,16 @@
 
     function gainIdleCoin(dt) {
       const g = game, p = g.player;
-      g.idleCoin += dt * (1.8 + g.t / 95 + g.stage.n * 0.05) * p.coinMult;
+      const income = safeNumber(dt * (1.8 + g.t / 95 + g.stage.n * 0.05) * p.coinMult, MAX_MONEY);
+      g.idleCoin = safeNumber(g.idleCoin, 0) + income;
+      if (!Number.isFinite(g.idleCoin)) g.idleCoin = MAX_MONEY;
       if (g.idleCoin >= 1) {
-        const coins = Math.floor(g.idleCoin);
-        g.idleCoin -= coins;
-        g.runCoins += coins;
-        g.coinsEarned += coins;
+        const coins = clampMoney(Math.min(g.idleCoin, 1e18));
+        g.idleCoin = Math.max(0, g.idleCoin - coins);
+        g.runCoins = addMoney(g.runCoins, coins);
+        g.coinsEarned = addMoney(g.coinsEarned, coins);
         syncRunCoins();
-        if (save.settings.damageNumbers) addText(p.x, p.y - 34, "+" + coins + "C", "#ffd84d");
+        if (save.settings.damageNumbers) addText(p.x, p.y - 34, formatGain(coins), "#ffd84d");
       }
     }
 
@@ -1371,10 +1464,11 @@
     }
 
     function damageEnemy(e, amount, color, text = true) {
-      e.hp -= amount;
+      const dmg = Math.min(MAX_STAT, Math.max(0, safeNumber(amount, 0)));
+      e.hp -= dmg;
       e.hit = 1;
-      game.damage += amount;
-      if (text && save.settings.damageNumbers) addText(e.x, e.y - e.r, Math.round(amount), color);
+      game.damage = Math.min(MAX_STAT, safeNumber(game.damage, 0) + dmg);
+      if (text && save.settings.damageNumbers) addText(e.x, e.y - e.r, formatMoney(Math.round(dmg)), color);
     }
 
     function killEnemy(e) {
@@ -1383,7 +1477,7 @@
       save.codex.enemies[e.type] = (save.codex.enemies[e.type] || 0) + 1;
       p.hp = Math.min(p.maxHp, p.hp + p.killHeal);
       drop(e.x, e.y, "xp", def.xp, "#4d8dff");
-      drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", Math.ceil(def.coin * p.coinMult), "#ffd84d");
+      drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", clampMoney(Math.ceil(safeNumber(def.coin * p.coinMult, MAX_MONEY))), "#ffd84d");
       burst(e.x, e.y, def.color, 12);
       beep("kill");
       if (e.type === "boss") {
@@ -1413,10 +1507,10 @@
         if (dd < p.r + 12) {
           if (d.kind === "xp") gainXp(d.value);
           if (d.kind === "coin") {
-            g.runCoins += d.value;
-            g.coinsEarned += d.value;
+            g.runCoins = addMoney(g.runCoins, d.value);
+            g.coinsEarned = addMoney(g.coinsEarned, d.value);
             syncRunCoins();
-            addText(p.x, p.y - 22, "+" + d.value, "#ffd84d");
+            addText(p.x, p.y - 22, formatGain(d.value), "#ffd84d");
             beep("coin");
           }
           g.drops.splice(i, 1);
@@ -1432,11 +1526,11 @@
         p.level++;
         p.nextXp = Math.floor(p.nextXp * 1.18 + 14);
         const bonus = 12 + p.level * 3 + game.stage.floor * 2;
-        const earned = Math.ceil(bonus * p.coinMult);
-        game.runCoins += earned;
-        game.coinsEarned += earned;
+        const earned = clampMoney(Math.ceil(safeNumber(bonus * p.coinMult, MAX_MONEY)));
+        game.runCoins = addMoney(game.runCoins, earned);
+        game.coinsEarned = addMoney(game.coinsEarned, earned);
         syncRunCoins();
-        flashToast(`LEVEL ${p.level}  +${earned}C`, "#54f7ff", 850);
+        flashToast(`LEVEL ${p.level}  ${formatGain(earned)}`, "#54f7ff", 850);
         beep("level");
       }
     }
@@ -1456,13 +1550,14 @@
     function buyRunSkill(id, amount = 1) {
       const skill = SKILL_POOL.find(s => s.id === id);
       if (!skill || !game || game.state !== "playing") return;
-      const levels = Math.max(1, Number(amount) || 1);
+      const levels = Math.max(1, safeLevel(amount) || 1);
       const cost = runSkillCost(skill, levels);
-      if (game.runCoins < cost) return;
-      game.runCoins -= cost;
-      game.shopLevels[id] = (game.shopLevels[id] || 0) + levels;
-      save.runUpgrades[id] = (save.runUpgrades[id] || 0) + levels;
+      if (!canAfford(game.runCoins, cost)) return;
+      game.runCoins = subMoney(game.runCoins, cost);
+      game.shopLevels[id] = safeLevel(game.shopLevels[id]) + levels;
+      save.runUpgrades[id] = safeLevel(save.runUpgrades[id]) + levels;
       skill.run(game, levels);
+      clampPlayerStats(game.player);
       game.skills.push(`${skill.name} +${levels}`);
       save.codex.skills[id] = true;
       syncRunCoins();
@@ -1472,12 +1567,18 @@
     }
 
     function scaledCost(baseCost, currentLv, amount = 1, growth = 1.18) {
-      const levels = Math.max(1, Number(amount) || 1);
+      const levels = Math.min(1000, Math.max(1, safeLevel(amount) || 1));
+      const startLv = safeLevel(currentLv);
+      const base = Math.max(1, safeNumber(baseCost, 1));
+      const curve = Math.max(0.012, (safeNumber(growth, 1.18) - 1) * 0.12);
       let total = 0;
       for (let i = 0; i < levels; i++) {
-        total += Math.ceil(baseCost * Math.pow(growth, currentLv + i));
+        const lv = startLv + i;
+        const mult = 1 + lv * curve * 4 + lv * lv * curve;
+        total += base * mult;
+        if (!Number.isFinite(total) || total >= MAX_COST) return MAX_COST;
       }
-      return total;
+      return clampCost(total);
     }
 
     function runSkillCost(skill, amount = 1) {
@@ -1488,8 +1589,8 @@
     function advanceStage() {
       const g = game, p = g.player;
       const cleared = g.stage.n;
-      g.runCoins += g.stage.reward;
-      g.coinsEarned += g.stage.reward;
+      g.runCoins = addMoney(g.runCoins, g.stage.reward);
+      g.coinsEarned = addMoney(g.coinsEarned, g.stage.reward);
       syncRunCoins();
       save.codex.achievements.boss = true;
       save.stage.clears[cleared] = true;
@@ -1546,8 +1647,8 @@
 
     function buyEquipmentPack(id) {
       const pack = SHOP_PACKS.find(p => p.id === id);
-      if (!pack || save.coins < pack.cost) return;
-      save.coins -= pack.cost;
+      if (!pack || !canAfford(save.coins, pack.cost)) return;
+      save.coins = subMoney(save.coins, pack.cost);
       const eq = createEquipment(pack.minRarity, pack.luck);
       save.equipment.unshift(eq);
       save.equipment = save.equipment.slice(0, 80);
@@ -1573,11 +1674,11 @@
       if (!game || game.state === "finished") return;
       game.state = "finished";
       game.resultReason = reason;
-      const coins = game.coinsEarned || 0;
-      save.coins = Math.max(0, Math.floor(game.runCoins || 0));
+      const coins = clampMoney(game.coinsEarned || 0);
+      save.coins = clampMoney(game.runCoins || 0);
       save.best.time = Math.max(save.best.time, game.totalTime || game.t);
       save.best.kills = Math.max(save.best.kills, game.kills);
-      save.best.coins = Math.max(save.best.coins, coins);
+      save.best.coins = Math.max(clampMoney(save.best.coins), coins);
       if (reason === "victory") {
         save.codex.achievements.boss = true;
         save.stage.clears[game.stage.n] = true;
@@ -1600,10 +1701,10 @@
         <div class="row"><span>ステージ</span><strong>${formatStage(game.stage.n)}</strong></div>
         <div class="row"><span>合計時間</span><strong>${fmtTime(game.totalTime || game.t)}</strong></div>
         <div class="row"><span>撃破数</span><strong>${game.kills}</strong></div>
-        <div class="row"><span>獲得コイン</span><strong>${game.coinsEarned || 0}</strong></div>
-        <div class="row"><span>現在の保存コイン</span><strong>${game.runCoins}</strong></div>
+        <div class="row"><span>獲得コイン</span><strong>${formatMoney(game.coinsEarned || 0)}C</strong></div>
+        <div class="row"><span>現在の保存コイン</span><strong>${formatMoney(game.runCoins)}C</strong></div>
         <div class="row"><span>獲得装備</span><div>${eq}</div></div>
-        <div class="row"><span>合計ダメージ</span><strong>${Math.round(game.damage)}</strong></div>
+        <div class="row"><span>合計ダメージ</span><strong>${formatMoney(Math.round(safeNumber(game.damage, 0)))}</strong></div>
       `;
     }
 
@@ -1792,7 +1893,7 @@
       $("xpText").textContent = `Lv.${p.level}`;
       $("xpBar").style.width = `${clamp(p.xp / p.nextXp, 0, 1) * 100}%`;
       $("timeText").textContent = `${formatStage(game.stage.n)} ${fmtTime(Math.max(0, game.stage.duration - game.t))}`;
-      $("runCoinText").textContent = game.runCoins;
+      $("runCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       $("killText").textContent = `${game.kills} KOs`;
       const skills = game.skills.slice(-9).map(s => `<span class="pill">${s}</span>`).join("");
       $("skillList").innerHTML = skills || "<span class='tiny'>左の購入パネルで強化</span>";
@@ -1808,7 +1909,7 @@
       $("stageInfo").textContent = game.bossSpawned
         ? "ボス出現中。倒すと次のステージへ"
         : `ボスまで ${fmtTime(remaining)} / 強化とガジェットを購入`;
-      $("shopCoinText").textContent = `${game.runCoins}C`;
+      $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
       const expectedRows = SKILL_POOL.length + GADGET_DEFS.length;
 
@@ -1821,10 +1922,10 @@
           row.querySelectorAll("[data-skill]").forEach(btn => {
             const amount = Number(btn.dataset.amount || 1);
             const cost = runSkillCost(skill, amount);
-            const can = game.runCoins >= cost;
+            const can = canAfford(game.runCoins, cost);
             btn.classList.toggle("primary", can);
             btn.classList.toggle("disabled", !can);
-            btn.textContent = `+${amount} ${cost}C`;
+            btn.textContent = `+${amount} ${formatMoney(cost)}C`;
           });
         });
         GADGET_DEFS.forEach(gadget => {
@@ -1833,14 +1934,14 @@
           const lvEl = row.querySelector(".gadget-lv");
           if (lvEl) lvEl.textContent = `Lv.${save.gadgets[gadget.id] || 0}`;
           const nextEl = row.querySelector(".gadget-next");
-          if (nextEl) nextEl.textContent = `次単価 ${gadgetCost(gadget, 1)}C`;
+          if (nextEl) nextEl.textContent = `次単価 ${formatMoney(gadgetCost(gadget, 1))}C`;
           row.querySelectorAll("[data-gadget]").forEach(btn => {
             const amount = Number(btn.dataset.amount || 1);
             const cost = gadgetCost(gadget, amount);
-            const can = game.runCoins >= cost;
+            const can = canAfford(game.runCoins, cost);
             btn.classList.toggle("primary", can);
             btn.classList.toggle("disabled", !can);
-            btn.textContent = `+${amount} ${cost}C`;
+            btn.textContent = `+${amount} ${formatMoney(cost)}C`;
           });
         });
         return;
@@ -1850,8 +1951,8 @@
         const lv = game.shopLevels[skill.id] || 0;
         const buttons = [1, 10, 100].map(amount => {
           const cost = runSkillCost(skill, amount);
-          const can = game.runCoins >= cost;
-          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-skill="${skill.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+          const can = canAfford(game.runCoins, cost);
+          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-skill="${skill.id}" data-amount="${amount}">+${amount} ${formatMoney(cost)}C</button>`;
         }).join("");
         return `
           <div class="shop-buy" data-shop-row data-skill-row="${skill.id}">
@@ -1867,14 +1968,14 @@
         const lv = save.gadgets[gadget.id] || 0;
         const buttons = [1, 10].map(amount => {
           const cost = gadgetCost(gadget, amount);
-          const can = game.runCoins >= cost;
-          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-gadget="${gadget.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+          const can = canAfford(game.runCoins, cost);
+          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-gadget="${gadget.id}" data-amount="${amount}">+${amount} ${formatMoney(cost)}C</button>`;
         }).join("");
         return `
           <div class="shop-buy" data-shop-row data-gadget-row="${gadget.id}">
             <span>
               <strong>${gadget.name} <span class="gadget-lv">Lv.${lv}</span></strong>
-              <span class="tiny">${gadget.desc} / 保存ガジェット / <span class="gadget-next">次単価 ${gadgetCost(gadget, 1)}C</span></span>
+              <span class="tiny">${gadget.desc} / 保存ガジェット / <span class="gadget-next">次単価 ${formatMoney(gadgetCost(gadget, 1))}C</span></span>
             </span>
             <div class="shop-actions">${buttons}</div>
           </div>`;
@@ -1889,7 +1990,7 @@
 
     function renderTitleSummary() {
       $("saveSummary").innerHTML = `
-        所持コイン: <b>${save.coins}</b><br>
+        所持コイン: <b>${formatMoney(save.coins)}C</b><br>
         最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
         最高撃破数: <b>${save.best.kills}</b><br>
         所持装備: <b>${save.equipment.length}</b><br>
@@ -1908,19 +2009,19 @@
     }
 
     function renderUpgrades() {
-      $("upgradeList").innerHTML = `<div class="row"><strong>所持コイン</strong><span class="pill">${save.coins}</span></div>` +
+      $("upgradeList").innerHTML = `<div class="row"><strong>所持コイン</strong><span class="pill">${formatMoney(save.coins)}C</span></div>` +
         UPGRADE_DEFS.map(u => {
           const lv = save.upgrades[u.id] || 0;
           const buttons = [1, 10, 100].map(amount => {
             const cost = upgradeCost(u, amount);
-            const can = save.coins >= cost;
-            return `<button class="${can ? "primary" : "disabled"}" data-upgrade="${u.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+            const can = canAfford(save.coins, cost);
+            return `<button class="${can ? "primary" : "disabled"}" data-upgrade="${u.id}" data-amount="${amount}">+${amount} ${formatMoney(cost)}C</button>`;
           }).join("");
           return `
             <div class="row">
               <div>
                 <h3>${u.name}</h3>
-                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 次単価 ${upgradeCost(u, 1)}C / 購入ごとに値上がり</p>
+                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 次単価 ${formatMoney(upgradeCost(u, 1))}C / 購入ごとに値上がり</p>
               </div>
               <div class="equip-actions">${buttons}</div>
             </div>`;
@@ -1935,11 +2036,11 @@
     function buyUpgrade(id, amount = 1) {
       const u = UPGRADE_DEFS.find(x => x.id === id);
       if (!u) return;
-      const levels = Math.max(1, Number(amount) || 1);
+      const levels = Math.max(1, safeLevel(amount) || 1);
       const cost = upgradeCost(u, levels);
-      if (save.coins < cost) return;
-      save.coins -= cost;
-      save.upgrades[id] = (save.upgrades[id] || 0) + levels;
+      if (!canAfford(save.coins, cost)) return;
+      save.coins = subMoney(save.coins, cost);
+      save.upgrades[id] = safeLevel(save.upgrades[id]) + levels;
       saveGame();
       renderUpgrades();
       beep("coin");
@@ -1953,23 +2054,24 @@
     function buyGadget(id, amount = 1) {
       const g = GADGET_DEFS.find(x => x.id === id);
       if (!g) return;
-      const levels = Math.max(1, Number(amount) || 1);
+      const levels = Math.max(1, safeLevel(amount) || 1);
       const cost = gadgetCost(g, levels);
       const buyingInRun = game && screen === "game" && game.state === "playing";
       const wallet = buyingInRun ? game.runCoins : save.coins;
-      if (wallet < cost) return;
+      if (!canAfford(wallet, cost)) return;
 
       if (buyingInRun) {
-        game.runCoins -= cost;
-        save.coins = Math.max(0, Math.floor(game.runCoins || 0));
+        game.runCoins = subMoney(game.runCoins, cost);
+        save.coins = clampMoney(game.runCoins || 0);
       } else {
-        save.coins -= cost;
+        save.coins = subMoney(save.coins, cost);
       }
 
-      save.gadgets[id] = (save.gadgets[id] || 0) + levels;
+      save.gadgets[id] = safeLevel(save.gadgets[id]) + levels;
 
       if (buyingInRun) {
         g.apply(game.player, levels);
+        clampPlayerStats(game.player);
         game.skills.push(`${g.name} +${levels}`);
         saveGame();
         renderRunShop(true);
@@ -1987,13 +2089,13 @@
         <div class="row">
           <div>
             <h3>装備ショップ</h3>
-            <p class="tiny">所持コイン ${save.coins}C / 高レア購入率ボーナス +${Math.round(shopLuckBonus() * 100)}%</p>
+            <p class="tiny">所持コイン ${formatMoney(save.coins)}C / 高レア購入率ボーナス +${Math.round(shopLuckBonus() * 100)}%</p>
           </div>
         </div>
         <div class="menu-grid" style="margin:10px 0 14px;">
           ${SHOP_PACKS.map(p => `
-            <button class="${save.coins >= p.cost ? "primary" : "disabled"}" data-buy-equip="${p.id}">
-              ${p.name}<br><span class="tiny">${p.cost}C / ${p.desc}</span>
+            <button class="${canAfford(save.coins, p.cost) ? "primary" : "disabled"}" data-buy-equip="${p.id}">
+              ${p.name}<br><span class="tiny">${formatMoney(p.cost)}C / ${p.desc}</span>
             </button>`).join("")}
         </div>
         <div class="row">
@@ -2032,7 +2134,7 @@
     function sellItem(id) {
       const item = save.equipment.find(e => e.id === id);
       if (!item) return;
-      save.coins += item.value;
+      save.coins = addMoney(save.coins, item.value);
       save.equipment = save.equipment.filter(e => e.id !== id);
       if (save.equippedId === id) save.equippedId = null;
       saveGame();
