@@ -824,7 +824,7 @@
 
     const SKILL_POOL = [
       { id: "atk", name: "剣技強化", desc: "弾のダメージ +11%", cost: 12, run: (g, n = 1) => g.player.damage *= Math.pow(1.11, n) },
-      { id: "rate", name: "早撃ちの心得", desc: "自動攻撃の間隔を短縮", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.08, n) },
+      { id: "rate", name: "早撃ちの心得", desc: "連射速度と弾速を上げる", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.1, n) },
       { id: "multi", name: "魔弾追加", desc: "同時に撃つ弾 +1", cost: 42, run: (g, n = 1) => g.player.projectiles += n },
       { id: "move", name: "会心の勘", desc: "クリティカル率 +2%", cost: 10, run: (g, n = 1) => g.player.crit += 0.02 * n },
       { id: "maxhp", name: "生命の護符", desc: "最大HP +24 / 少し回復", cost: 18, run: (g, n = 1) => { g.player.maxHp += 24 * n; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 24 * n); } },
@@ -1138,10 +1138,10 @@
       player.maxHp = Math.min(MAX_STAT, Math.max(1, safeNumber(player.maxHp, 1)));
       player.hp = Math.min(player.maxHp, Math.max(0, safeNumber(player.hp, player.maxHp)));
       player.damage = Math.min(MAX_STAT, Math.max(1, safeNumber(player.damage, 1)));
-      player.fireRate = Math.min(80, Math.max(0.1, safeNumber(player.fireRate, 1)));
+      player.fireRate = Math.min(240, Math.max(0.1, safeNumber(player.fireRate, 1)));
       player.coinMult = Math.min(1e30, Math.max(0, safeNumber(player.coinMult, 1)));
       player.magnet = Math.min(20000, Math.max(0, safeNumber(player.magnet, 0)));
-      player.projectiles = Math.min(200, Math.max(1, safeLevel(player.projectiles || 1)));
+      player.projectiles = Math.min(320, Math.max(1, safeLevel(player.projectiles || 1)));
       player.crit = Math.min(0.85, Math.max(0, safeNumber(player.crit, 0)));
       player.fireLevel = Math.min(500, Math.max(0, safeLevel(player.fireLevel || 0)));
       player.poison = Math.min(500, Math.max(0, safeLevel(player.poison || 0)));
@@ -1151,7 +1151,7 @@
       player.orbSpread = Math.min(500, Math.max(0, safeLevel(player.orbSpread || 0)));
       player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
       player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
-      player.bulletSpeedBonus = Math.min(20, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
+      player.bulletSpeedBonus = Math.min(40, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
     }
 
     function buildPlayerStats() {
@@ -1449,9 +1449,24 @@
       beep("rare");
     }
 
-    function autoAttack() {
+    function autoAttack(dt) {
       const g = game, p = g.player;
       if (g.fire > 0) return;
+      const interval = 1 / Math.max(0.1, p.fireRate);
+      const maxBursts = Math.min(16, Math.max(1, Math.ceil(dt / interval) + 2));
+      let bursts = 0;
+      while (g.fire <= 0 && bursts < maxBursts) {
+        if (!fireVolley()) {
+          g.fire = Math.max(g.fire, 0.025);
+          return;
+        }
+        g.fire += interval;
+        bursts++;
+      }
+    }
+
+    function fireVolley() {
+      const g = game, p = g.player;
       const targets = targetableEnemies(g, p)
         .sort((a, b) => {
           const da = dist2(p, a);
@@ -1459,26 +1474,39 @@
           return da === db ? a.hp - b.hp : da - db;
         })
         .slice(0, Math.max(1, Math.min(48, p.projectiles)));
-      if (!targets.length) return;
-      g.fire = 1 / p.fireRate;
-      const count = Math.max(1, Math.min(36, p.projectiles));
+      if (!targets.length) return false;
+      const count = Math.max(1, Math.min(44, p.projectiles));
       const damageScale = Math.max(1, p.projectiles / count);
+      const speed = shotSpeed(p);
       for (let i = 0; i < count; i++) {
         const target = targets[i % targets.length];
         const repeat = Math.floor(i / targets.length);
         const repeatCount = Math.ceil(count / targets.length);
         const spread = (repeat - (repeatCount - 1) / 2) * 0.045;
-        const aim = predictedAimPoint(target, 0.18);
+        const lead = aimLead(p, target, speed);
+        const aim = predictedAimPoint(target, lead);
         const a = Math.atan2(aim.y - p.y, aim.x - p.x) + spread;
         const crit = Math.random() < p.crit;
-        const speed = 660 * (1 + Math.min(1.8, p.bulletSpeedBonus || 0));
         g.bullets.push({
           x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 6, life: 2.8, target, speed, turn: 7.5 + Math.min(10, (p.aimAssist || 0) * 0.45),
+          r: 6, life: 3.4, target, speed, turn: 10 + Math.min(18, (p.aimAssist || 0) * 0.6) + Math.min(5, p.fireRate * 0.018),
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
       beep("shoot");
+      return true;
+    }
+
+    function shotSpeed(p) {
+      const rateBonus = Math.max(0, Math.log2(Math.max(1, p.fireRate / 2.15))) * 0.18;
+      const deviceBonus = Math.min(4.2, p.bulletSpeedBonus || 0);
+      const threatBonus = Math.min(1.35, Math.sqrt(adaptiveDifficulty(game).speed) - 1);
+      return 760 * (1 + rateBonus + deviceBonus + threatBonus);
+    }
+
+    function aimLead(p, target, speed) {
+      const distance = Math.hypot(target.x - p.x, target.y - p.y);
+      return clamp(distance / Math.max(1, speed) * 0.85, 0.08, 0.62);
     }
 
     function isTargetAhead(enemy, p = game.player) {
@@ -1570,7 +1598,7 @@
           }
         }
         if (b.target && g.enemies.includes(b.target) && b.target.hp > 0) {
-          const aim = predictedAimPoint(b.target, 0.1);
+          const aim = predictedAimPoint(b.target, clamp(Math.hypot(b.target.x - b.x, b.target.y - b.y) / Math.max(1, b.speed) * 0.7, 0.06, 0.42));
           const desired = Math.atan2(aim.y - b.y, aim.x - b.x);
           const current = Math.atan2(b.vy, b.vx);
           let delta = desired - current;
