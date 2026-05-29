@@ -644,7 +644,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.1</div>
+          <div class="version-badge" id="versionText">v0.9.2</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -758,7 +758,8 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.1";
+    const APP_VERSION = "v0.9.2";
+    const BOSS_HP_MULTIPLIER = 1e8;
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -1210,8 +1211,10 @@
         autoSpeed: 170,
         shake: 0,
         spawn: 0,
-        fire: 1,
+        fire: 3,
         laserCd: 0,
+        bossAttackCd: 0,
+        bossFreeze: null,
         shopUiTimer: 0,
         orbAngle: 0,
         idleCoin: 0,
@@ -1229,6 +1232,7 @@
         },
         enemies: [],
         bullets: [],
+        bossShots: [],
         lasers: [],
         drops: [],
         particles: [],
@@ -1328,7 +1332,7 @@
       const g = game, p = g.player;
       g.t += dt;
       g.totalTime += dt;
-      g.distance += g.autoSpeed * dt;
+      if (!g.bossSpawned) g.distance += g.autoSpeed * dt;
       g.spawn -= dt;
       g.orbAngle += dt * 3.4;
       g.shake = Math.max(0, g.shake - dt * 18);
@@ -1336,6 +1340,7 @@
       movePlayer(dt);
       gainIdleCoin(dt);
       spawnEnemies(dt);
+      updateBossAttacks(dt);
       autoAttack(dt);
       updateLasers(dt);
       updateBullets(dt);
@@ -1365,6 +1370,14 @@
     function movePlayer(dt) {
       const p = game.player;
       const a = arenaRect();
+      if (game.bossSpawned && game.bossFreeze) {
+        p.dashCd = Math.max(0, p.dashCd - dt);
+        p.dashTime = 0;
+        p.x = clamp(game.bossFreeze.x, a.x + p.r, a.x + a.w * 0.42);
+        p.y = game.bossFreeze.y;
+        input.dashPressed = false;
+        return;
+      }
       p.dashCd = Math.max(0, p.dashCd - dt);
       p.dashTime = Math.max(0, p.dashTime - dt);
       const axis = movementAxis();
@@ -1438,6 +1451,14 @@
       return clamp(lane + a.h * band + rand(-spread, spread), a.y + 44, a.y + a.h - 42);
     }
 
+    function bossAnchor() {
+      const a = arenaRect();
+      return {
+        x: a.x + a.w * 0.78,
+        y: playerLaneY()
+      };
+    }
+
     function spawnEnemy(type, index = 0, pack = 1) {
       const def = ENEMY_TYPES[type];
       const a = arenaRect();
@@ -1456,14 +1477,89 @@
     }
 
     function spawnBoss() {
+      const p = game.player;
+      const a = arenaRect();
+      game.enemies.length = 0;
+      game.bullets.length = 0;
+      game.bossShots.length = 0;
       game.bossSpawned = true;
+      game.autoSpeed = 0;
+      game.bossAttackCd = 0.8;
+      game.bossFreeze = {
+        x: clamp(p.x, a.x + p.r, a.x + a.w * 0.34),
+        y: playerLaneY()
+      };
       spawnEnemy("boss");
       const boss = game.enemies[game.enemies.length - 1];
-      boss.hp *= game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2;
+      const anchor = bossAnchor();
+      boss.x = anchor.x;
+      boss.y = anchor.y;
+      boss.hp *= game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2 * BOSS_HP_MULTIPLIER;
       boss.maxHp = boss.hp;
-      flashToast("BOSS: コインドラゴン", "#d5a84b");
+      flashToast("BOSS: コインドラゴン / 足止め戦", "#d5a84b");
       game.shake = 10;
       beep("rare");
+    }
+
+    function updateBossAttacks(dt) {
+      const g = game, p = g.player;
+      if (!g.bossSpawned) return;
+      const boss = g.enemies.find(e => e.type === "boss" && e.hp > 0);
+      if (boss) {
+        g.bossAttackCd -= dt;
+        if (g.bossAttackCd <= 0) {
+          fireBossShot(boss);
+          const pressure = Math.min(1.2, g.stage.n * 0.02 + adaptiveDifficulty(g).boss * 0.015);
+          g.bossAttackCd = Math.max(0.42, 1.28 - pressure);
+        }
+      }
+
+      const a = arenaRect();
+      for (let i = g.bossShots.length - 1; i >= 0; i--) {
+        const s = g.bossShots[i];
+        s.age = (s.age || 0) + dt;
+        s.x += s.vx * dt;
+        s.y += s.vy * dt;
+        s.life -= dt;
+        s.hit = Math.max(0, (s.hit || 0) - dt * 8);
+        if (s.life <= 0 || s.x < a.x - 80 || s.x > a.x + a.w + 120 || s.y < a.y - 120 || s.y > a.y + a.h + 120) {
+          g.bossShots.splice(i, 1);
+          continue;
+        }
+        if (dist2(s, p) < (s.r + p.r) ** 2) {
+          p.hp -= s.damage;
+          burst(s.x, s.y, "#c75246", 8);
+          if (save.settings.damageNumbers) addText(p.x, p.y - 30, `-${Math.ceil(s.damage)}`, "#c75246");
+          g.bossShots.splice(i, 1);
+          g.shake = save.settings.shake ? 7 : 0;
+        }
+      }
+    }
+
+    function fireBossShot(boss) {
+      const g = game, p = g.player;
+      const shots = Math.min(4, 1 + Math.floor(g.stage.floor / 3) + Math.floor(Math.min(10, adaptiveDifficulty(g).boss) / 5));
+      const speed = 210 + Math.min(120, g.stage.n * 4);
+      const base = Math.atan2(p.y - boss.y, p.x - boss.x);
+      for (let i = 0; i < shots; i++) {
+        const spread = (i - (shots - 1) / 2) * 0.14;
+        const a = base + spread;
+        g.bossShots.push({
+          x: boss.x - boss.r * 0.62,
+          y: boss.y + spread * 74,
+          vx: Math.cos(a) * speed,
+          vy: Math.sin(a) * speed,
+          r: 11,
+          hp: Math.max(18, p.damage * 1.6),
+          maxHp: Math.max(18, p.damage * 1.6),
+          damage: Math.max(8, p.maxHp * 0.075 + g.stage.n * 1.6),
+          speed,
+          life: 5,
+          age: 0,
+          hit: 0
+        });
+      }
+      beep("shoot");
     }
 
     function autoAttack(dt) {
@@ -1485,12 +1581,15 @@
 
     function fireVolley() {
       const g = game, p = g.player;
-      const targets = targetableEnemies(g, p)
+      const threats = targetableBossShots(g, p)
+        .sort((a, b) => dist2(p, a) - dist2(p, b));
+      const enemies = targetableEnemies(g, p)
         .sort((a, b) => {
           const da = dist2(p, a);
           const db = dist2(p, b);
           return da === db ? a.hp - b.hp : da - db;
-        })
+        });
+      const targets = [...threats, ...enemies]
         .slice(0, Math.max(1, Math.min(48, p.projectiles)));
       if (!targets.length) return false;
       const count = Math.max(1, Math.min(44, p.projectiles));
@@ -1542,7 +1641,17 @@
       return g.enemies.filter(e => isTargetAhead(e, p));
     }
 
+    function targetableBossShots(g = game, p = game.player) {
+      return (g.bossShots || []).filter(s => s.hp > 0 && (s.age || 0) > 0.28 && s.x > p.x + 8);
+    }
+
     function predictedAimPoint(target, lead) {
+      if (Number.isFinite(target.vx) || Number.isFinite(target.vy)) {
+        return {
+          x: target.x + safeNumber(target.vx, 0) * lead,
+          y: target.y + safeNumber(target.vy, 0) * lead
+        };
+      }
       const drift = (target.speed || 0) + (game ? game.autoSpeed * 0.62 : 0);
       const minX = game ? game.player.x + 30 : target.x;
       return {
@@ -1613,6 +1722,26 @@
           continue;
         }
         if (b.age < 0.025) continue;
+        let consumed = false;
+        for (let j = g.bossShots.length - 1; j >= 0; j--) {
+          const s = g.bossShots[j];
+          if ((s.age || 0) < 0.16) continue;
+          const rr = s.r + b.r;
+          if (pointToSegmentDistance(s.x, s.y, prevX, prevY, b.x, b.y) < rr) {
+            s.hp -= b.damage;
+            s.hit = 1;
+            if (s.hp <= 0) {
+              burst(s.x, s.y, "#f0c66e", 7);
+              if (save.settings.damageNumbers) addText(s.x, s.y - 12, "撃落", "#f0c66e");
+              g.bossShots.splice(j, 1);
+              beep("kill");
+            }
+            g.bullets.splice(i, 1);
+            consumed = true;
+            break;
+          }
+        }
+        if (consumed) continue;
         for (const e of g.enemies) {
           const rr = e.r + b.r;
           if (pointToSegmentDistance(e.x, e.y, prevX, prevY, b.x, b.y) < rr) {
@@ -1632,6 +1761,21 @@
       for (let i = g.enemies.length - 1; i >= 0; i--) {
         const e = g.enemies[i];
         if (!e) continue;
+        if (e.type === "boss" && g.bossSpawned) {
+          const anchor = bossAnchor();
+          e.x += (anchor.x - e.x) * Math.min(1, dt * 4);
+          e.y += (anchor.y - e.y) * Math.min(1, dt * 4);
+          e.hit = Math.max(0, e.hit - dt * 6);
+          if (e.burn > 0) {
+            e.burn -= dt;
+            damageEnemy(e, (4 + p.fireLevel * 2) * dt, "#cf6f52", false);
+          }
+          if (e.hp <= 0) {
+            killEnemy(e);
+            g.enemies.splice(i, 1);
+          }
+          continue;
+        }
         const d = len(p.x - e.x, p.y - e.y);
         e.x -= (e.speed + g.autoSpeed * 0.62) * dt;
         e.y += (p.y - e.y) / d * e.speed * 0.28 * dt;
@@ -1840,8 +1984,12 @@
       g.t = 0;
       g.spawn = 0;
       g.bossSpawned = false;
+      g.autoSpeed = 170;
+      g.bossAttackCd = 0;
+      g.bossFreeze = null;
       g.enemies.length = 0;
       g.bullets.length = 0;
+      g.bossShots.length = 0;
       g.drops.length = 0;
       p.hp = Math.min(p.maxHp, p.hp + Math.ceil(p.maxHp * 0.28));
       saveGame();
@@ -1964,6 +2112,7 @@
         drawDrops();
         drawEnemies();
         drawPlayer();
+        drawBossShots();
         drawBullets();
         drawLasers();
         drawParticles();
@@ -2114,7 +2263,7 @@
         const tx = Math.cos(angle) * tail;
         const ty = Math.sin(angle) * tail;
         ctx.save();
-        ctx.lineCap = "square";
+        ctx.lineCap = "round";
         ctx.strokeStyle = "rgba(26,16,8,0.88)";
         ctx.lineWidth = b.crit ? 10 : 9;
         ctx.beginPath();
@@ -2127,13 +2276,22 @@
         ctx.moveTo(b.x - tx * 0.78, b.y - ty * 0.78);
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
-        ctx.fillStyle = "#fff3d6";
-        ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 4 : 0), b.r * 2);
-        ctx.fillStyle = color;
-        ctx.fillRect(b.x - b.r + 2, b.y - b.r + 2, b.r * 2 - 4 + (b.crit ? 4 : 0), b.r * 2 - 4);
-        ctx.strokeStyle = "#1a1008";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 4 : 0), b.r * 2);
+        circle(b.x, b.y, b.r + (b.crit ? 2 : 1), "#1a1008", true);
+        circle(b.x, b.y, b.r, "#fff3d6", true);
+        circle(b.x, b.y, Math.max(2, b.r - 3), color, true);
+        ctx.restore();
+      }
+    }
+
+    function drawBossShots() {
+      if (!game.bossShots) return;
+      for (const s of game.bossShots) {
+        const pulse = 1 + Math.sin((performance.now() / 1000 + s.x * 0.01) * 8) * 0.12;
+        ctx.save();
+        ctx.globalAlpha = s.hit > 0 ? 0.75 : 1;
+        circle(s.x, s.y, (s.r + 4) * pulse, "#1a1008", true);
+        circle(s.x, s.y, s.r * pulse, "#c75246", true);
+        circle(s.x - 3, s.y - 3, Math.max(3, s.r * 0.42), "#f0c66e", true);
         ctx.restore();
       }
     }
@@ -2265,7 +2423,7 @@
       const remaining = Math.max(0, game.stage.duration - game.t);
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
-        ? "ボス出現中。倒すと次のステージへ"
+        ? "ボス戦。足止め中 / 赤弾は撃ち落とせます"
         : `ボスまで ${fmtTime(remaining)} / ${threatText(game)} / 強化で敵も強化`;
       $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
