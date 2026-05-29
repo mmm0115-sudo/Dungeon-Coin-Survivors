@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.5</div>
+          <div class="version-badge" id="versionText">v0.9.6</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,7 +766,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.5";
+    const APP_VERSION = "v0.9.6";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
@@ -836,6 +836,13 @@
       const n = Math.max(0, safeNumber(value, 0));
       if (n < 1000) return String(Math.round(n));
       return formatMoney(Math.round(n));
+    }
+
+    function formatPercent(value) {
+      const p = clamp(safeNumber(value, 0) * 100, 0, 100);
+      if (p > 0 && p < 0.01) return "<0.01%";
+      const digits = p >= 10 ? 1 : p >= 1 ? 2 : 3;
+      return `${p.toFixed(digits)}%`;
     }
 
     const CHARACTERS = {
@@ -1126,6 +1133,16 @@
       const threat = adaptiveDifficulty(g);
       return `脅威x${threat.hp.toFixed(threat.hp >= 10 ? 0 : 1)}`;
     }
+    function facilityPowerText(g = game) {
+      if (!g || !facilitiesUnlocked(g.stage.n)) return "施設: Stage 1-3で解放";
+      const p = g.player;
+      return `施設${facilitySlots(g).length}基 / 威力x${(p.facilityDamage || 1).toFixed(1)} / 連射x${(p.facilityRate || 1).toFixed(1)}`;
+    }
+    function bossHpText(g = game) {
+      if (!g) return "BOSS HP --";
+      const boss = g.enemies.find(e => e.type === "boss" && e.maxHp > 0);
+      return boss ? `BOSS HP ${formatPercent(boss.hp / boss.maxHp)}` : "BOSS HP --";
+    }
     function featureStage() {
       return STAGE_OVERRIDE || save.stage.unlocked || 1;
     }
@@ -1286,6 +1303,7 @@
         autoSpeed: 105,
         shake: 0,
         spawn: 0,
+        spawnSerial: 0,
         fire: 3,
         laserCd: 0,
         facilityCd: 0,
@@ -1419,6 +1437,7 @@
       g.spawn -= dt;
       g.orbAngle += dt * 3.4;
       g.shake = Math.max(0, g.shake - dt * 18);
+      g.bossDamageFlash = Math.max(0, (g.bossDamageFlash || 0) - dt * 7);
 
       movePlayer(dt);
       gainIdleCoin(dt);
@@ -1514,18 +1533,23 @@
       const pack = Math.min(18, Math.ceil(packBase * Math.pow(d, 0.58)));
       g.spawn = interval;
       if (g.enemies.length > MAX_ENEMIES) return;
+      const serialStart = safeLevel(g.spawnSerial || 0);
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
         if (t > 12 && roll < 0.32) type = "bat";
         if (t > 30 && roll < 0.22 + Math.min(0.2, (d - 1) * 0.09)) type = "brute";
-        spawnEnemy(type, i, pack);
+        spawnEnemy(type, serialStart + i, pack);
       }
+      g.spawnSerial = serialStart + pack;
     }
 
     function enemySpawnY(a, type, index, pack) {
       if (type === "boss") return a.y + a.h * 0.22;
-      return a.y + 28 + (index % 3) * 18;
+      const topBand = Math.max(58, a.h * 0.18);
+      const stagger = (index % Math.max(1, pack)) * Math.min(8, 42 / Math.max(1, pack));
+      const maxY = Math.max(a.y + 44, playerLaneY() - 118);
+      return clamp(a.y + 26 + rand(0, topBand) + stagger, a.y + 24, maxY);
     }
 
     function bossAnchor() {
@@ -1539,8 +1563,9 @@
     function spawnEnemy(type, index = 0, pack = 1) {
       const def = ENEMY_TYPES[type];
       const a = arenaRect();
-      const lane = type === "boss" ? 1 : (index + Math.floor(game.t * 2)) % 3;
-      const x = laneX(lane, a);
+      const lane = type === "boss" ? 1 : Math.floor(rand(0, 3));
+      const laneJitter = type === "boss" ? 0 : rand(-a.w * 0.095, a.w * 0.095);
+      const x = clamp(laneX(lane, a) + laneJitter, a.x + def.radius + 10, a.x + a.w - def.radius - 10);
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
       const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
@@ -1572,7 +1597,8 @@
       boss.x = anchor.x;
       boss.y = anchor.y;
       const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2;
-      boss.hp = Math.max(scaledHp, estimateBossDps(p, game) * BOSS_TARGET_SECONDS);
+      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.28, game.stage.n * 0.004));
+      boss.hp = clamp(scaledHp, targetHp * 0.82, targetHp * 1.25);
       boss.maxHp = boss.hp;
       flashToast("BOSS: コインドラゴン / 足止め戦", "#d5a84b");
       game.shake = 10;
@@ -1639,6 +1665,7 @@
           y: boss.y + spread * 74,
           vx: Math.cos(a) * speed,
           vy: Math.sin(a) * speed,
+          bossShot: true,
           r: 11,
           hp: Math.max(18, p.damage * 1.6),
           maxHp: Math.max(18, p.damage * 1.6),
@@ -1658,13 +1685,13 @@
       const a = arenaRect();
       const lanes = laneCenters(a);
       const count = Math.min(3, 1 + safeLevel(p.facilityCount || 0));
-      const start = count === 1 ? 1 : 0;
-      return Array.from({ length: count }, (_, i) => {
-        const lane = start + i;
+      const slotLanes = count === 1 ? [1] : count === 2 ? [0, 2] : [0, 1, 2];
+      const y = Math.min(playerLaneY() + 30, a.y + a.h - 36);
+      return slotLanes.map(lane => {
         return {
           lane,
           x: lanes[lane] || lanes[1],
-          y: playerLaneY() + 34
+          y
         };
       });
     }
@@ -1690,6 +1717,7 @@
         g.bullets.push({
           x: slot.x, y: slot.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 6, life: 2.6, age: 0, speed, facility: true,
+          bossPierce: target.type === "boss",
           damage, crit: false, fire: 0
         });
         fired++;
@@ -1703,6 +1731,16 @@
     function facilityTarget(slot) {
       let target = null;
       let best = Infinity;
+      for (const s of targetableBossShots()) {
+        const shotLane = nearestLaneIndex(s.x);
+        const laneBias = shotLane === slot.lane ? 0.34 : 0.88;
+        const urgency = clamp((game.player.y - s.y) / Math.max(1, arenaRect().h), 0.18, 1);
+        const d = ((s.x - slot.x) ** 2 + (s.y - slot.y) ** 2) * laneBias * urgency * 0.42;
+        if (d < best) {
+          best = d;
+          target = s;
+        }
+      }
       for (const e of targetableEnemies()) {
         const laneBias = (e.lane === slot.lane ? 0.55 : 1.25);
         const d = ((e.x - slot.x) ** 2 + (e.y - slot.y) ** 2) * laneBias;
@@ -1747,7 +1785,14 @@
           const db = dist2(p, b);
           return da === db ? a.hp - b.hp : da - db;
         });
-      const targets = [...threats, ...enemies]
+      const boss = enemies.find(e => e.type === "boss");
+      const threatLimit = g.bossSpawned
+        ? Math.min(threats.length, Math.max(1, Math.floor(Math.max(1, p.projectiles) * 0.32)))
+        : threats.length;
+      const attackTargets = boss
+        ? [boss, boss, ...enemies.filter(e => e !== boss)]
+        : enemies;
+      const targets = [...threats.slice(0, threatLimit), ...attackTargets]
         .slice(0, Math.max(1, Math.min(48, p.projectiles)));
       if (!targets.length) return false;
       const room = Math.max(0, MAX_BULLETS - g.bullets.length);
@@ -1758,10 +1803,11 @@
       const spreadStep = shotSpreadStep(p);
       for (let i = 0; i < count; i++) {
         const target = targets[i % targets.length];
+        const isBossTarget = target.type === "boss";
         const offset = i - (count - 1) / 2;
         const muzzleX = p.x + clamp(offset, -8, 8) * 7;
         const muzzleY = p.y - 22 - Math.abs(offset) * 0.7;
-        const spread = offset * spreadStep * 0.75;
+        const spread = isBossTarget ? offset * spreadStep * 0.12 : offset * spreadStep * 0.75;
         const lead = aimLead({ x: muzzleX, y: muzzleY }, target, speed);
         const aim = predictedAimPoint(target, lead);
         aim.y += clamp(offset * target.r * 0.28, -target.r * 0.72, target.r * 0.72);
@@ -1770,6 +1816,7 @@
         g.bullets.push({
           x: muzzleX, y: muzzleY, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 7, life: 3.2, age: 0, speed,
+          bossPierce: isBossTarget,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
@@ -1846,7 +1893,7 @@
         const y2 = target.y;
         g.lasers.push({ x1, y1, x2, y2, life: 0.18, max: 0.18 });
         for (const e of g.enemies) {
-          const width = 13 + Math.min(10, p.laserLevel * 0.35) + e.r * 0.2;
+          const width = 13 + Math.min(10, p.laserLevel * 0.35) + e.r * 0.2 + (e.type === "boss" ? 18 : 0);
           if (pointToSegmentDistance(e.x, e.y, x1, y1, x2, y2) <= width) {
             damageEnemy(e, damage, "#f0c66e", false);
           }
@@ -1886,27 +1933,29 @@
         }
         if (b.age < 0.025) continue;
         let consumed = false;
-        for (let j = g.bossShots.length - 1; j >= 0; j--) {
-          const s = g.bossShots[j];
-          if ((s.age || 0) < 0.16) continue;
-          const rr = s.r + b.r;
-          if (pointToSegmentDistance(s.x, s.y, prevX, prevY, b.x, b.y) < rr) {
-            s.hp -= b.damage;
-            s.hit = 1;
-            if (s.hp <= 0) {
-              burst(s.x, s.y, "#f0c66e", 7);
-              if (save.settings.damageNumbers) addText(s.x, s.y - 12, "撃落", "#f0c66e");
-              g.bossShots.splice(j, 1);
-              beep("kill");
+        if (!b.bossPierce) {
+          for (let j = g.bossShots.length - 1; j >= 0; j--) {
+            const s = g.bossShots[j];
+            if ((s.age || 0) < 0.16) continue;
+            const rr = s.r + b.r + (b.facility ? 6 : 2);
+            if (pointToSegmentDistance(s.x, s.y, prevX, prevY, b.x, b.y) < rr) {
+              s.hp -= b.damage;
+              s.hit = 1;
+              if (s.hp <= 0) {
+                burst(s.x, s.y, "#f0c66e", 7);
+                if (save.settings.damageNumbers) addText(s.x, s.y - 12, "撃落", "#f0c66e");
+                g.bossShots.splice(j, 1);
+                beep("kill");
+              }
+              g.bullets.splice(i, 1);
+              consumed = true;
+              break;
             }
-            g.bullets.splice(i, 1);
-            consumed = true;
-            break;
           }
         }
         if (consumed) continue;
         for (const e of g.enemies) {
-          const rr = e.r + b.r;
+          const rr = e.r + b.r + (e.type === "boss" ? 24 : b.facility ? 6 : 3);
           if (pointToSegmentDistance(e.x, e.y, prevX, prevY, b.x, b.y) < rr) {
             damageEnemy(e, b.damage, b.crit ? "#f0c66e" : "#fff3d6");
             if (b.fire) e.burn = Math.max(e.burn, 1.8 + b.fire * 0.35);
@@ -1940,7 +1989,7 @@
           continue;
         }
         const targetX = laneX(e.lane ?? nearestLaneIndex(e.x), a);
-        e.x += (targetX - e.x) * Math.min(1, dt * 1.4);
+        e.x += (targetX - e.x) * Math.min(1, dt * 0.22);
         e.y += (e.speed * (0.82 + Math.min(0.35, g.stage.n * 0.004))) * dt;
         const d = len(p.x - e.x, p.y - e.y);
         e.hit = Math.max(0, e.hit - dt * 6);
@@ -2017,6 +2066,7 @@
       if (e.type === "boss" && dmg > 0 && e.hp === beforeHp && beforeHp > 0) {
         e.hp = Math.max(0, beforeHp * (1 - 1e-10));
       }
+      if (e.type === "boss" && dmg > 0) game.bossDamageFlash = 1;
       e.hit = 1;
       game.damage = Math.min(MAX_STAT, safeNumber(game.damage, 0) + dmg);
       if (text && save.settings.damageNumbers && (e.type === "boss" || Math.random() < 0.35)) {
@@ -2404,19 +2454,30 @@
       const slots = facilitySlots(game);
       if (!slots.length) return;
       const pulse = game.facilityPulse || 0;
+      ctx.save();
+      ctx.globalAlpha = 0.34;
+      ctx.fillStyle = "#0f0a06";
+      for (const slot of slots) {
+        ctx.fillRect(slot.x - 42, slot.y + 18, 84, 8);
+      }
+      ctx.restore();
       for (const slot of slots) {
         ctx.save();
-        ctx.fillStyle = "#302015";
-        ctx.fillRect(slot.x - 20, slot.y - 16, 40, 32);
+        ctx.fillStyle = "#1a1008";
+        ctx.fillRect(slot.x - 25, slot.y - 15, 50, 34);
+        ctx.fillStyle = "#4a2d18";
+        ctx.fillRect(slot.x - 19, slot.y - 22, 38, 15);
         ctx.fillStyle = "#6f8db8";
-        ctx.fillRect(slot.x - 13, slot.y - 24 - pulse * 3, 26, 16);
-        ctx.fillStyle = "#f0c66e";
-        ctx.fillRect(slot.x - 5, slot.y - 34 - pulse * 8, 10, 20);
+        ctx.fillRect(slot.x - 14, slot.y - 31 - pulse * 3, 28, 18);
+        ctx.fillStyle = "#84c7a1";
+        ctx.fillRect(slot.x - 6, slot.y - 43 - pulse * 9, 12, 26);
+        ctx.fillStyle = "#fff3d6";
+        ctx.fillRect(slot.x - 3, slot.y - 45 - pulse * 9, 6, 8);
         ctx.strokeStyle = "#fff3d6";
         ctx.lineWidth = 2;
-        ctx.strokeRect(slot.x - 20, slot.y - 16, 40, 32);
-        ctx.globalAlpha = 0.18 + pulse * 0.22;
-        circle(slot.x, slot.y - 28, 22 + pulse * 12, "#f0c66e", false, 3);
+        ctx.strokeRect(slot.x - 25, slot.y - 15, 50, 34);
+        ctx.globalAlpha = 0.16 + pulse * 0.28;
+        circle(slot.x, slot.y - 31, 24 + pulse * 14, "#84c7a1", false, 3);
         ctx.restore();
       }
     }
@@ -2441,6 +2502,11 @@
           ctx.fillStyle = "#d9d3c2";
           ctx.fillRect(e.x - e.r * 0.55, e.y - e.r - 7, e.r * 1.1, 6);
         } else if (e.type === "boss") {
+          if (game.bossDamageFlash > 0) {
+            ctx.globalAlpha = 0.34 + game.bossDamageFlash * 0.3;
+            circle(e.x, e.y, e.r + 24, "#fff3d6", true);
+            ctx.globalAlpha = 1;
+          }
           ctx.fillRect(e.x - e.r, e.y - e.r * 0.7, e.r * 2, e.r * 1.4);
           ctx.fillStyle = "#c75246";
           ctx.fillRect(e.x - e.r * 0.35, e.y - e.r * 1.05, e.r * 0.7, e.r * 0.35);
@@ -2460,6 +2526,12 @@
         ctx.fillRect(e.x - e.r, e.y - e.r - 10, w, 4);
         ctx.fillStyle = "#c75246";
         ctx.fillRect(e.x - e.r, e.y - e.r - 10, w * clamp(e.hp / e.maxHp, 0, 1), 4);
+        if (e.type === "boss") {
+          ctx.font = "800 13px system-ui";
+          ctx.textAlign = "center";
+          ctx.fillStyle = "#fff3d6";
+          ctx.fillText(formatPercent(e.hp / e.maxHp), e.x, e.y - e.r - 16);
+        }
       }
     }
 
@@ -2633,8 +2705,8 @@
       const remaining = Math.max(0, game.stage.duration - game.t);
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
-        ? "ボス戦。足止め中 / 赤弾は撃ち落とせます"
-        : `上から侵攻 / ボスまで ${fmtTime(remaining)} / ${threatText(game)} / Stage3から施設砲台`;
+        ? `ボス戦。足止め中 / ${bossHpText(game)} / 本体攻撃と赤弾迎撃を分担 / ${facilityPowerText(game)}`
+        : `上から侵攻 / 敵出現ランダム / ボスまで ${fmtTime(remaining)} / ${threatText(game)} / ${facilityPowerText(game)}`;
       $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
       const gadgets = visibleGadgets(game.stage.n);
