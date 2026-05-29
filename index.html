@@ -138,6 +138,21 @@
       padding: 22px 16px;
     }
 
+    .version-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 26px;
+      margin-top: 10px;
+      padding: 4px 10px;
+      border: 2px solid rgba(232, 198, 124, 0.55);
+      border-radius: 4px;
+      background: rgba(32, 20, 12, 0.76);
+      color: var(--gold);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
     h1, h2, h3, p { margin: 0; }
 
     h1 {
@@ -629,6 +644,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
+          <div class="version-badge" id="versionText">v0.9.0</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -742,6 +758,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
+    const APP_VERSION = "v0.9.0";
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -1490,7 +1507,7 @@
         const crit = Math.random() < p.crit;
         g.bullets.push({
           x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 6, life: 3.4, target, speed, turn: 10 + Math.min(18, (p.aimAssist || 0) * 0.6) + Math.min(5, p.fireRate * 0.018),
+          r: 7, life: 3.4, age: 0, target, speed, turn: 10 + Math.min(18, (p.aimAssist || 0) * 0.6) + Math.min(5, p.fireRate * 0.018),
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
@@ -1609,11 +1626,13 @@
         }
         b.x += b.vx * dt;
         b.y += b.vy * dt;
+        b.age = (b.age || 0) + dt;
         b.life -= dt;
         if (b.life <= 0 || b.x < a.x - 140 || b.x > a.x + a.w + 360 || b.y < a.y - 180 || b.y > a.y + a.h + 180) {
           g.bullets.splice(i, 1);
           continue;
         }
+        if (b.age < 0.11) continue;
         for (const e of g.enemies) {
           const rr = e.r + b.r;
           if ((e.x - b.x) ** 2 + (e.y - b.y) ** 2 < rr * rr) {
@@ -1963,10 +1982,10 @@
         const sy = save.settings.shake ? rand(-game.shake, game.shake) : 0;
         ctx.translate(sx, sy);
         drawDrops();
-        drawBullets();
-        drawLasers();
         drawEnemies();
         drawPlayer();
+        drawBullets();
+        drawLasers();
         drawParticles();
         drawTexts();
       }
@@ -2109,11 +2128,33 @@
 
     function drawBullets() {
       for (const b of game.bullets) {
-        ctx.fillStyle = b.fire ? "#cf6f52" : "#f0c66e";
-        ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 3 : 0), b.r * 2);
+        const color = b.fire ? "#cf6f52" : "#f0c66e";
+        const angle = Math.atan2(b.vy, b.vx);
+        const tail = Math.max(28, Math.min(54, (b.speed || 760) * 0.04));
+        const tx = Math.cos(angle) * tail;
+        const ty = Math.sin(angle) * tail;
+        ctx.save();
+        ctx.lineCap = "square";
+        ctx.strokeStyle = "rgba(26,16,8,0.88)";
+        ctx.lineWidth = b.crit ? 10 : 9;
+        ctx.beginPath();
+        ctx.moveTo(b.x - tx, b.y - ty);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = b.crit ? 7 : 6;
+        ctx.beginPath();
+        ctx.moveTo(b.x - tx * 0.78, b.y - ty * 0.78);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.fillStyle = "#fff3d6";
+        ctx.fillRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 4 : 0), b.r * 2);
+        ctx.fillStyle = color;
+        ctx.fillRect(b.x - b.r + 2, b.y - b.r + 2, b.r * 2 - 4 + (b.crit ? 4 : 0), b.r * 2 - 4);
         ctx.strokeStyle = "#1a1008";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 3 : 0), b.r * 2);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(b.x - b.r, b.y - b.r, b.r * 2 + (b.crit ? 4 : 0), b.r * 2);
+        ctx.restore();
       }
     }
 
@@ -2322,6 +2363,7 @@
     }
 
     function renderTitleSummary() {
+      $("versionText").textContent = APP_VERSION;
       $("saveSummary").innerHTML = `
         所持コイン: <b>${formatMoney(save.coins)}C</b><br>
         最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
