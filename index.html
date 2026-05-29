@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.2</div>
+          <div class="version-badge" id="versionText">v0.10.4</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,10 +766,10 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.2";
-    const BOSS_TARGET_SECONDS = 24;
+    const APP_VERSION = "v0.10.4";
+    const BOSS_TARGET_SECONDS = 16;
     const MAX_ENEMIES = 170;
-    const MAX_BULLETS = 720;
+    const MAX_BULLETS = 1200;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
     const MAX_VISIBLE_FACILITIES = 6;
@@ -1103,7 +1103,7 @@
       return {
         n, world, floor, difficulty,
         duration: n === 1 ? 38 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
-        bossHp: 1.55 + difficulty * (n % 8 === 0 ? 1.28 : 0.82),
+        bossHp: 1.1 + difficulty * (n % 8 === 0 ? 0.88 : 0.56),
         reward: 24 + n * 5
       };
     }
@@ -1128,7 +1128,7 @@
         spawn: Math.min(2.45, 1.08 + root * 0.075 + score * 0.0045),
         damage: 1,
         speed: 1,
-        boss: Math.min(9, 0.9 + root * 0.12 + score * 0.022)
+        boss: Math.min(6.5, 0.72 + root * 0.08 + score * 0.015)
       };
     }
     function threatText(g = game) {
@@ -1583,9 +1583,9 @@
       const anchor = bossAnchor();
       boss.x = anchor.x;
       boss.y = anchor.y;
-      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 2.1;
-      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.16, game.stage.n * 0.0025));
-      boss.hp = clamp(scaledHp, targetHp * 0.62, targetHp * 0.95);
+      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 1.15;
+      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.1, game.stage.n * 0.0018));
+      boss.hp = clamp(scaledHp, targetHp * 0.34, targetHp * 0.58);
       boss.maxHp = boss.hp;
       boss.hpRatio = 1;
       boss.damageRatioTaken = 0;
@@ -1718,6 +1718,22 @@
       return Math.max(1, Math.min(32, safeLevel(p.projectiles || 1), roomLimit));
     }
 
+    function reserveBulletRoom(g, count) {
+      const need = Math.max(0, safeLevel(count));
+      if (need <= 0) return;
+      while (g.bullets.length > Math.max(0, MAX_BULLETS - need)) {
+        const oldFacility = g.bullets.findIndex(b => b.facility);
+        g.bullets.splice(oldFacility >= 0 ? oldFacility : 0, 1);
+      }
+    }
+
+    function facilityFireAngle(slot) {
+      const a = arenaRect();
+      const targetX = laneX(slot.lane, a);
+      const targetY = a.y + 54;
+      return Math.atan2(targetY - slot.y, targetX - slot.x);
+    }
+
     function updateFacilities(dt) {
       const g = game, p = g.player;
       const slots = facilitySlots(g);
@@ -1726,34 +1742,25 @@
       g.facilityCd -= dt;
       g.facilityPulse = Math.max(0, (g.facilityPulse || 0) - dt * 6);
       if (g.facilityCd > 0) return;
-      if (g.bullets.length >= MAX_BULLETS) return;
 
-      const room = Math.max(0, MAX_BULLETS - g.bullets.length);
       const volleyCount = Math.min(MAX_FACILITY_VOLLEY, volleyCountFor(p));
-      const needed = Math.min(room, total * volleyCount);
-      if (needed <= 0) return;
+      reserveBulletRoom(g, slots.length * volleyCount);
       const damage = facilityShotDamage(p);
       const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
       let fired = 0;
-      const fallbackTarget = facilityTarget(slots.find(slot => slot.lane === 1) || slots[0]);
       for (const slot of slots) {
-        const target = facilityTarget(slot) || fallbackTarget;
-        if (!target) continue;
         for (let i = 0; i < volleyCount; i++) {
           if (g.bullets.length >= MAX_BULLETS) break;
           const offset = i - (volleyCount - 1) / 2;
-          const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
-          const aim = predictedAimPoint(target, lead);
           const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
-          const jitter = offset * shotSpreadStep(p) * 0.42 * (1 - aimAssist);
-          const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
+          const a = facilityFireAngle(slot) + offset * shotSpreadStep(p) * 0.5 * (1 - aimAssist);
           const crit = Math.random() < p.crit;
           g.bullets.push({
             x: slot.x + clamp(offset, -6, 6) * 2.4,
             y: slot.y - 24 - Math.abs(offset) * 0.24,
             vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-            r: 7, life: 2.8, age: 0, speed, facility: true,
-            bossPierce: target.type === "boss",
+            r: 7, life: 3.4, age: 0, speed, facility: true,
+            bossPierce: g.bossSpawned,
             damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
           });
           fired++;
@@ -2611,27 +2618,12 @@
     function drawBullets() {
       for (const b of game.bullets) {
         const color = b.facility ? "#84c7a1" : (b.fire ? "#cf6f52" : "#f0c66e");
-        const angle = Math.atan2(b.vy, b.vx);
-        const tail = Math.max(28, Math.min(54, (b.speed || 760) * 0.04));
-        const tx = Math.cos(angle) * tail;
-        const ty = Math.sin(angle) * tail;
         ctx.save();
-        ctx.lineCap = "round";
-        ctx.strokeStyle = "rgba(26,16,8,0.88)";
-        ctx.lineWidth = b.crit ? 10 : 9;
-        ctx.beginPath();
-        ctx.moveTo(b.x - tx, b.y - ty);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = b.crit ? 7 : 6;
-        ctx.beginPath();
-        ctx.moveTo(b.x - tx * 0.78, b.y - ty * 0.78);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
-        circle(b.x, b.y, b.r + (b.crit ? 2 : 1), "#1a1008", true);
-        circle(b.x, b.y, b.r, "#fff3d6", true);
-        circle(b.x, b.y, Math.max(2, b.r - 3), color, true);
+        ctx.globalAlpha = b.facility ? 0.96 : 1;
+        circle(b.x, b.y, b.r + (b.crit ? 4 : 3), "#1a1008", true);
+        circle(b.x, b.y, b.r + (b.crit ? 2 : 1), "#fff3d6", true);
+        circle(b.x, b.y, b.r - 1, color, true);
+        circle(b.x - 2, b.y - 2, Math.max(2, b.r * 0.34), "#fff3d6", true);
         ctx.restore();
       }
     }
