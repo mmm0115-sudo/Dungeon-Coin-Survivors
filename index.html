@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.9</div>
+          <div class="version-badge" id="versionText">v0.10.0</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,14 +766,14 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.9";
+    const APP_VERSION = "v0.10.0";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
     const MAX_VISIBLE_FACILITIES = 12;
-    const MAX_FACILITY_VOLLEY = 18;
+    const MAX_FACILITY_VOLLEY = 32;
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
@@ -1744,6 +1744,20 @@
       return p.damage * 0.55 * (p.facilityDamage || 1) * projectileBoost * fireBoost * critBoost;
     }
 
+    function volleyCountFor(p, room = Infinity) {
+      const roomLimit = Number.isFinite(room) ? safeLevel(room) : 32;
+      return Math.max(1, Math.min(32, safeLevel(p.projectiles || 1), roomLimit));
+    }
+
+    function symmetricFacilitySlot(slots, offset, index) {
+      const lane = offset < -0.01 ? 0 : offset > 0.01 ? 2 : 1;
+      const laneSlots = slots.filter(slot => slot.lane === lane);
+      if (laneSlots.length) return laneSlots[index % laneSlots.length];
+      const centerSlots = slots.filter(slot => slot.lane === 1);
+      if (centerSlots.length) return centerSlots[index % centerSlots.length];
+      return slots[index % slots.length];
+    }
+
     function updateFacilities(dt) {
       const g = game, p = g.player;
       const slots = facilitySlots(g);
@@ -1755,25 +1769,29 @@
       if (g.bullets.length >= MAX_BULLETS) return;
 
       const room = Math.max(0, MAX_BULLETS - g.bullets.length);
-      const shotCount = Math.min(MAX_FACILITY_VOLLEY, total, room);
+      const shotCount = Math.min(MAX_FACILITY_VOLLEY, volleyCountFor(p, room));
       if (shotCount <= 0) return;
       const squadScale = Math.max(1, total / shotCount);
       const damage = facilityShotDamage(p) * squadScale;
       const speed = Math.min(1500, 620 + (p.bulletSpeedBonus || 0) * 180);
       let fired = 0;
+      const fallbackTarget = facilityTarget(slots.find(slot => slot.lane === 1) || slots[0]);
       for (let i = 0; i < shotCount; i++) {
-        const slot = slots[i % slots.length];
-        const target = facilityTarget(slot);
+        const offset = i - (shotCount - 1) / 2;
+        const slot = symmetricFacilitySlot(slots, offset, i);
+        const target = facilityTarget(slot) || fallbackTarget;
         if (!target || g.bullets.length >= MAX_BULLETS) continue;
         const lead = aimLead({ x: slot.x, y: slot.y }, target, speed);
         const aim = predictedAimPoint(target, lead);
         const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
-        const jitter = (i - (shotCount - 1) / 2) * 0.006 * (1 - aimAssist);
+        const jitter = offset * shotSpreadStep(p) * 0.5 * (1 - aimAssist);
         const a = Math.atan2(aim.y - slot.y, aim.x - slot.x) + jitter;
         const crit = Math.random() < p.crit;
         g.bullets.push({
-          x: slot.x, y: slot.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 6, life: 2.6, age: 0, speed, facility: true,
+          x: slot.x + clamp(offset, -5, 5) * 3,
+          y: slot.y - 32 - Math.abs(offset) * 0.28,
+          vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+          r: 7, life: 2.8, age: 0, speed, facility: true,
           bossPierce: target.type === "boss",
           damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
@@ -1854,7 +1872,7 @@
       if (!targets.length) return false;
       const room = Math.max(0, MAX_BULLETS - g.bullets.length);
       if (room <= 0) return true;
-      const count = Math.max(1, Math.min(32, p.projectiles, room));
+      const count = volleyCountFor(p, room);
       const damageScale = Math.max(1, p.projectiles / count);
       const speed = shotSpeed(p);
       const spreadStep = shotSpreadStep(p);
