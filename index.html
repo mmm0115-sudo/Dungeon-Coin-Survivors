@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.1</div>
+          <div class="version-badge" id="versionText">v0.10.2</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,10 +766,10 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.1";
-    const BOSS_TARGET_SECONDS = 30;
+    const APP_VERSION = "v0.10.2";
+    const BOSS_TARGET_SECONDS = 24;
     const MAX_ENEMIES = 170;
-    const MAX_BULLETS = 360;
+    const MAX_BULLETS = 720;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
     const MAX_VISIBLE_FACILITIES = 6;
@@ -1103,7 +1103,7 @@
       return {
         n, world, floor, difficulty,
         duration: n === 1 ? 38 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
-        bossHp: 2.2 + difficulty * (n % 8 === 0 ? 1.8 : 1.18),
+        bossHp: 1.55 + difficulty * (n % 8 === 0 ? 1.28 : 0.82),
         reward: 24 + n * 5
       };
     }
@@ -1124,11 +1124,11 @@
       const root = Math.sqrt(score);
       return {
         score,
-        hp: Math.min(36, 1 + root * 0.34 + score * 0.04),
-        spawn: Math.min(2.2, 1 + root * 0.06 + score * 0.0035),
+        hp: Math.min(48, 1.16 + root * 0.42 + score * 0.055),
+        spawn: Math.min(2.45, 1.08 + root * 0.075 + score * 0.0045),
         damage: 1,
         speed: 1,
-        boss: Math.min(14, 1 + root * 0.2 + score * 0.035)
+        boss: Math.min(9, 0.9 + root * 0.12 + score * 0.022)
       };
     }
     function threatText(g = game) {
@@ -1556,8 +1556,8 @@
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
       const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
-      const scale = stageScale * pressure.hp;
-      const damageScale = Math.max(0.55, Math.sqrt(stageScale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035)) * pressure.damage;
+      const scale = stageScale * pressure.hp * (type === "boss" ? 0.75 : 1.38);
+      const damageScale = Math.max(0.55, Math.sqrt(stageScale)) * (1.02 + Math.min(1.6, game.stage.n * 0.04)) * pressure.damage;
       game.enemies.push({
         type, lane, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
         speed: def.speed * 1.08, damage: def.damage * damageScale,
@@ -1583,9 +1583,9 @@
       const anchor = bossAnchor();
       boss.x = anchor.x;
       boss.y = anchor.y;
-      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 3.2;
-      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.28, game.stage.n * 0.004));
-      boss.hp = clamp(scaledHp, targetHp * 0.82, targetHp * 1.25);
+      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 2.1;
+      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.16, game.stage.n * 0.0025));
+      boss.hp = clamp(scaledHp, targetHp * 0.62, targetHp * 0.95);
       boss.maxHp = boss.hp;
       boss.hpRatio = 1;
       boss.damageRatioTaken = 0;
@@ -1614,8 +1614,8 @@
         g.bossAttackCd -= dt;
         if (g.bossAttackCd <= 0) {
           fireBossShot(boss);
-          const pressure = Math.min(1.2, g.stage.n * 0.02 + adaptiveDifficulty(g).boss * 0.015);
-          g.bossAttackCd = Math.max(0.42, 1.28 - pressure);
+          const pressure = Math.min(0.72, g.stage.n * 0.012 + adaptiveDifficulty(g).boss * 0.01);
+          g.bossAttackCd = Math.max(0.58, 1.45 - pressure);
         }
       }
 
@@ -1643,7 +1643,7 @@
 
     function fireBossShot(boss) {
       const g = game, p = g.player;
-      const shots = Math.min(4, 1 + Math.floor(g.stage.floor / 3) + Math.floor(Math.min(10, adaptiveDifficulty(g).boss) / 5));
+      const shots = Math.min(3, 1 + Math.floor(g.stage.floor / 4) + Math.floor(Math.min(8, adaptiveDifficulty(g).boss) / 6));
       const speed = 210 + Math.min(120, g.stage.n * 4);
       const base = Math.atan2(p.y - boss.y, p.x - boss.x);
       for (let i = 0; i < shots; i++) {
@@ -1658,7 +1658,7 @@
           r: 11,
           hp: Math.max(18, p.damage * 1.6),
           maxHp: Math.max(18, p.damage * 1.6),
-          damage: Math.max(8, p.maxHp * 0.075 + g.stage.n * 1.6),
+          damage: Math.max(7, p.maxHp * 0.055 + g.stage.n * 1.1),
           speed,
           life: 5,
           age: 0,
@@ -1842,16 +1842,18 @@
         const target = targets[i % targets.length];
         const isBossTarget = target.type === "boss";
         const offset = i - (count - 1) / 2;
-        const muzzleX = p.x + clamp(offset, -8, 8) * 7;
-        const muzzleY = p.y - 22 - Math.abs(offset) * 0.7;
-        const spread = isBossTarget ? offset * spreadStep * 0.12 : offset * spreadStep * 0.75;
+        const muzzleX = p.x;
+        const muzzleY = p.y - 24;
+        const spread = isBossTarget ? offset * spreadStep * 0.08 : offset * spreadStep * 0.42;
         const lead = aimLead({ x: muzzleX, y: muzzleY }, target, speed);
         const aim = predictedAimPoint(target, lead);
-        aim.y += clamp(offset * target.r * 0.28, -target.r * 0.72, target.r * 0.72);
+        aim.y += clamp(offset * target.r * 0.12, -target.r * 0.42, target.r * 0.42);
         const a = Math.atan2(aim.y - muzzleY, aim.x - muzzleX) + spread;
         const crit = Math.random() < p.crit;
         g.bullets.push({
-          x: muzzleX, y: muzzleY, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+          x: muzzleX + clamp(offset, -4, 4) * 1.2,
+          y: muzzleY - Math.abs(offset) * 0.18,
+          vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
           r: 7, life: 3.2, age: 0, speed,
           bossPierce: isBossTarget,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
