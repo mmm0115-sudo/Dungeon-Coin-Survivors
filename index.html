@@ -815,20 +815,20 @@
 
     const UPGRADE_DEFS = [
       { id: "hp", name: "初期HPアップ", baseCost: 45, desc: "最大HP +8", apply: (s, lv) => s.hp += lv * 8 },
-      { id: "damage", name: "初期剣技アップ", baseCost: 55, desc: "攻撃力 +5%", apply: (s, lv) => s.damage *= 1 + lv * 0.05 },
+      { id: "damage", name: "初期剣技アップ", baseCost: 55, desc: "攻撃力 +3.5%", apply: (s, lv) => s.damage *= 1 + lv * 0.035 },
       { id: "speed", name: "会心の勘アップ", baseCost: 50, desc: "クリティカル率 +1%", apply: (s, lv) => s.crit += lv * 0.01 },
-      { id: "coin", name: "コイン獲得倍率アップ", baseCost: 60, desc: "コイン +5%", apply: (s, lv) => s.coin *= 1 + lv * 0.05 },
+      { id: "coin", name: "コイン獲得倍率アップ", baseCost: 60, desc: "コイン +3.5%", apply: (s, lv) => s.coin *= 1 + lv * 0.035 },
       { id: "rare", name: "高レア購入率アップ", baseCost: 75, desc: "ショップ高レア率 +0.6%", apply: (s, lv) => s.rare += lv * 0.006 },
       { id: "magnet", name: "初期経験値取得範囲アップ", baseCost: 45, desc: "取得範囲 +8", apply: (s, lv) => s.magnet += lv * 8 }
     ];
 
     const SKILL_POOL = [
-      { id: "atk", name: "剣技強化", desc: "弾のダメージ +18%", cost: 12, run: (g, n = 1) => g.player.damage *= Math.pow(1.18, n) },
-      { id: "rate", name: "早撃ちの心得", desc: "自動攻撃の間隔を短縮", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.14, n) },
+      { id: "atk", name: "剣技強化", desc: "弾のダメージ +11%", cost: 12, run: (g, n = 1) => g.player.damage *= Math.pow(1.11, n) },
+      { id: "rate", name: "早撃ちの心得", desc: "自動攻撃の間隔を短縮", cost: 14, run: (g, n = 1) => g.player.fireRate *= Math.pow(1.08, n) },
       { id: "multi", name: "魔弾追加", desc: "同時に撃つ弾 +1", cost: 42, run: (g, n = 1) => g.player.projectiles += n },
       { id: "move", name: "会心の勘", desc: "クリティカル率 +2%", cost: 10, run: (g, n = 1) => g.player.crit += 0.02 * n },
-      { id: "maxhp", name: "生命の護符", desc: "最大HP +28 / 少し回復", cost: 18, run: (g, n = 1) => { g.player.maxHp += 28 * n; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 28 * n); } },
-      { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +18%", cost: 16, run: (g, n = 1) => g.player.coinMult *= Math.pow(1.18, n) },
+      { id: "maxhp", name: "生命の護符", desc: "最大HP +24 / 少し回復", cost: 18, run: (g, n = 1) => { g.player.maxHp += 24 * n; g.player.hp = Math.min(g.player.maxHp, g.player.hp + 24 * n); } },
+      { id: "coin", name: "コイン獲得量アップ", desc: "コイン獲得 +10%", cost: 16, run: (g, n = 1) => g.player.coinMult *= Math.pow(1.10, n) },
       { id: "magnet", name: "拾い屋の勘", desc: "ジェムとコインをより早く回収", cost: 12, run: (g, n = 1) => g.player.magnet += 65 * n },
       { id: "fire", name: "火矢の札", desc: "弾が燃焼ダメージを与える", cost: 34, run: (g, n = 1) => g.player.fireLevel += n },
       { id: "orb", name: "雷珠", desc: "重ならない輪で周囲を回る雷珠 +1", cost: 48, run: (g, n = 1) => g.player.orbs += n },
@@ -1039,15 +1039,15 @@
     function stageConfig(n) {
       const world = Math.floor((n - 1) / 8) + 1;
       const floor = ((n - 1) % 8) + 1;
-      const base = 1 + (world - 1) * 0.62 + (floor - 1) * 0.12;
-      const late = n >= 9 ? Math.pow(1.13, n - 8) : 1;
-      const endlessRamp = n >= 25 ? Math.pow(1.08, n - 24) : 1;
+      const base = 0.72 + (world - 1) * 0.78 + (floor - 1) * 0.18;
+      const late = n >= 9 ? Math.pow(1.16, n - 8) : 1;
+      const endlessRamp = n >= 25 ? Math.pow(1.1, n - 24) : 1;
       const bossWall = n % 8 === 0 ? 2.35 : 1;
       const difficulty = base * late * endlessRamp * bossWall;
       return {
         n, world, floor, difficulty,
-        duration: 28 + Math.min(16, (world - 1) * 2.8 + floor * 0.9),
-        bossHp: 1.2 + difficulty * (n % 8 === 0 ? 0.92 : 0.5),
+        duration: n === 1 ? 38 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
+        bossHp: 1.05 + difficulty * (n % 8 === 0 ? 1.0 : 0.56),
         reward: 24 + n * 5
       };
     }
@@ -1364,8 +1364,15 @@
       if (g.bossSpawned) return;
       const t = g.t;
       const d = g.stage.difficulty;
-      const interval = Math.max(0.075, (t < 10 ? 0.32 : t < 24 ? 0.21 : 0.14) / Math.sqrt(d));
-      const pack = Math.min(26, Math.ceil((t < 10 ? 3 : t < 24 ? 6 : 9) * Math.pow(d, 0.72)));
+      const firstStage = g.stage.n === 1;
+      const intervalBase = firstStage
+        ? (t < 14 ? 0.52 : t < 30 ? 0.36 : 0.24)
+        : (t < 10 ? 0.32 : t < 24 ? 0.21 : 0.14);
+      const packBase = firstStage
+        ? (t < 14 ? 1.5 : t < 30 ? 2.6 : 4.2)
+        : (t < 10 ? 3 : t < 24 ? 6 : 9);
+      const interval = Math.max(0.075, intervalBase / Math.sqrt(d));
+      const pack = Math.min(28, Math.ceil(packBase * Math.pow(d, 0.74)));
       g.spawn = interval;
       if (g.enemies.length > 220) return;
       for (let i = 0; i < pack; i++) {
@@ -1384,10 +1391,11 @@
       const x = a.x + a.w + margin + rand(0, 140);
       const lane = playerLaneY();
       const y = type === "boss" ? lane : clamp(lane + rand(-92, 30), a.y + 56, a.y + a.h - 48);
-      const scale = (1 + game.t / 210) * game.stage.difficulty;
+      const scale = (0.82 + game.t / 190) * game.stage.difficulty;
+      const damageScale = Math.max(0.55, Math.sqrt(scale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035));
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty), damage: def.damage * Math.sqrt(scale),
+        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty), damage: def.damage * damageScale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1457,7 +1465,7 @@
       const targets = [...g.enemies]
         .sort((a, b) => dist2(p, a) - dist2(p, b))
         .slice(0, shots);
-      const damage = p.damage * (1.55 + p.laserLevel * 0.16);
+      const damage = p.damage * (1.2 + p.laserLevel * 0.09);
       for (const target of targets) {
         const x1 = p.x + 12;
         const y1 = p.y - 5;
@@ -1471,7 +1479,7 @@
           }
         }
       }
-      g.laserCd = Math.max(0.52, 2.7 - p.laserLevel * 0.045);
+      g.laserCd = Math.max(0.72, 2.9 - p.laserLevel * 0.038);
       beep("shoot");
     }
 
@@ -1588,12 +1596,12 @@
       if (p.poison > 0) {
         const range = poisonAuraRange(p);
         for (const e of g.enemies) {
-          if (dist2(p, e) < range * range) damageEnemy(e, (10 + p.poison * 5) * dt, "#a9d46a", false);
+          if (dist2(p, e) < range * range) damageEnemy(e, (7 + p.poison * 3.8) * dt, "#a9d46a", false);
         }
       }
       if (p.orbs > 0) {
         const range = orbDamageRange(p);
-        const orbDamage = (24 + p.orbs * 8) * (p.orbDamageMult || 1) * dt;
+        const orbDamage = (16 + p.orbs * 5.8) * (p.orbDamageMult || 1) * dt;
         for (const e of g.enemies) {
           if (dist2(p, e) < range * range) damageEnemy(e, orbDamage, "#79b8ff", false);
         }
@@ -1721,7 +1729,7 @@
 
     function runSkillCost(skill, amount = 1) {
       const currentLv = game ? (game.shopLevels[skill.id] || 0) : (save.runUpgrades[skill.id] || 0);
-      return scaledCost(skill.cost, currentLv, amount, 1.2);
+      return scaledCost(skill.cost, currentLv, amount, 1.32);
     }
 
     function advanceStage() {
@@ -2260,7 +2268,7 @@
 
     function upgradeCost(u, amount = 1) {
       const currentLv = save.upgrades[u.id] || 0;
-      return scaledCost(u.baseCost, currentLv, amount, 1.18);
+      return scaledCost(u.baseCost, currentLv, amount, 1.24);
     }
 
     function buyUpgrade(id, amount = 1) {
@@ -2278,7 +2286,7 @@
 
     function gadgetCost(g, amount = 1) {
       const currentLv = save.gadgets[g.id] || 0;
-      return scaledCost(g.baseCost, currentLv, amount, 1.22);
+      return scaledCost(g.baseCost, currentLv, amount, 1.34);
     }
 
     function buyGadget(id, amount = 1) {
