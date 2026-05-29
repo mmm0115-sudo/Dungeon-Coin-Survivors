@@ -1051,6 +1051,34 @@
         reward: 24 + n * 5
       };
     }
+    function sumLevels(obj) {
+      return Object.values(obj || {}).reduce((total, lv) => total + safeLevel(lv), 0);
+    }
+    function upgradePressure(g = game) {
+      const permanent = sumLevels(save.upgrades);
+      const run = g && g.shopLevels ? sumLevels(g.shopLevels) : sumLevels(save.runUpgrades);
+      const gadgets = sumLevels(save.gadgets);
+      const eq = save.equipment.find(e => e.id === save.equippedId);
+      const eqRarity = eq ? Math.max(0, RARITIES.findIndex(r => r.id === eq.rarity)) : 0;
+      const eqPower = eq ? 3 + eqRarity * 4 + Math.min(12, (eq.effects || []).length * 2) : 0;
+      return permanent * 0.75 + run * 0.62 + gadgets * 1.15 + eqPower;
+    }
+    function adaptiveDifficulty(g = game) {
+      const score = upgradePressure(g);
+      const root = Math.sqrt(score);
+      return {
+        score,
+        hp: Math.min(18, 1 + root * 0.25 + score * 0.025),
+        spawn: Math.min(4.4, 1 + root * 0.13 + score * 0.009),
+        damage: Math.min(6.5, 1 + root * 0.12 + score * 0.012),
+        speed: Math.min(2.35, 1 + root * 0.055 + score * 0.0045),
+        boss: Math.min(6, 1 + root * 0.11 + score * 0.014)
+      };
+    }
+    function threatText(g = game) {
+      const threat = adaptiveDifficulty(g);
+      return `脅威x${threat.hp.toFixed(threat.hp >= 10 ? 0 : 1)}`;
+    }
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
     function shuffle(arr) {
       for (let i = arr.length - 1; i > 0; i--) {
@@ -1363,7 +1391,8 @@
       if (g.spawn > 0) return;
       if (g.bossSpawned) return;
       const t = g.t;
-      const d = g.stage.difficulty;
+      const pressure = adaptiveDifficulty(g);
+      const d = g.stage.difficulty * pressure.spawn;
       const firstStage = g.stage.n === 1;
       const intervalBase = firstStage
         ? (t < 14 ? 0.52 : t < 30 ? 0.36 : 0.24)
@@ -1371,10 +1400,10 @@
       const packBase = firstStage
         ? (t < 14 ? 1.5 : t < 30 ? 2.6 : 4.2)
         : (t < 10 ? 3 : t < 24 ? 6 : 9);
-      const interval = Math.max(0.075, intervalBase / Math.sqrt(d));
-      const pack = Math.min(28, Math.ceil(packBase * Math.pow(d, 0.74)));
+      const interval = Math.max(0.055, intervalBase / Math.sqrt(d));
+      const pack = Math.min(40, Math.ceil(packBase * Math.pow(d, 0.74)));
       g.spawn = interval;
-      if (g.enemies.length > 220) return;
+      if (g.enemies.length > Math.min(420, 180 + pressure.spawn * 62)) return;
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
@@ -1391,11 +1420,12 @@
       const x = a.x + a.w + margin + rand(0, 140);
       const lane = playerLaneY();
       const y = type === "boss" ? lane : clamp(lane + rand(-92, 30), a.y + 56, a.y + a.h - 48);
-      const scale = (0.82 + game.t / 190) * game.stage.difficulty;
-      const damageScale = Math.max(0.55, Math.sqrt(scale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035));
+      const pressure = adaptiveDifficulty(game);
+      const scale = (0.82 + game.t / 190) * game.stage.difficulty * pressure.hp;
+      const damageScale = Math.max(0.55, Math.sqrt(scale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035)) * pressure.damage;
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty), damage: def.damage * damageScale,
+        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty) * pressure.speed, damage: def.damage * damageScale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1404,7 +1434,7 @@
       game.bossSpawned = true;
       spawnEnemy("boss");
       const boss = game.enemies[game.enemies.length - 1];
-      boss.hp *= game.stage.bossHp;
+      boss.hp *= game.stage.bossHp * adaptiveDifficulty(game).boss;
       boss.maxHp = boss.hp;
       flashToast("BOSS: コインドラゴン", "#d5a84b");
       game.shake = 10;
@@ -2150,7 +2180,7 @@
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
         ? "ボス出現中。倒すと次のステージへ"
-        : `ボスまで ${fmtTime(remaining)} / スキルと戦闘装置を購入`;
+        : `ボスまで ${fmtTime(remaining)} / ${threatText(game)} / 強化で敵も強化`;
       $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
       const expectedRows = SKILL_POOL.length + GADGET_DEFS.length;
