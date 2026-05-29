@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.5</div>
+          <div class="version-badge" id="versionText">v0.10.6</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,9 +766,9 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.5";
+    const APP_VERSION = "v0.10.6";
     const BOSS_TARGET_SECONDS = 8;
-    const MAX_ENEMIES = 170;
+    const MAX_ENEMIES = 230;
     const MAX_BULLETS = 1200;
     const MAX_PARTICLES = 140;
     const MAX_TEXTS = 48;
@@ -889,7 +889,10 @@
     const ENEMY_TYPES = {
       slime: { name: "洞窟スライム", hp: 22, speed: 48, damage: 3.2, xp: 4, coin: 2, color: "#65b96a", radius: 12 },
       bat: { name: "古城コウモリ", hp: 20, speed: 82, damage: 4.4, xp: 5, coin: 2, color: "#7e65d1", radius: 10 },
+      goblin: { name: "盗掘ゴブリン", hp: 34, speed: 58, damage: 5.2, xp: 7, coin: 4, color: "#9bbf5a", radius: 13 },
+      wisp: { name: "青火ウィスプ", hp: 28, speed: 72, damage: 6.2, xp: 8, coin: 4, color: "#79b8ff", radius: 11 },
       brute: { name: "鎧オーガ", hp: 76, speed: 42, damage: 10, xp: 12, coin: 6, color: "#b5654d", radius: 18 },
+      knight: { name: "黒鉄ナイト", hp: 130, speed: 36, damage: 14, xp: 18, coin: 10, color: "#8d8b83", radius: 20 },
       boss: { name: "コインドラゴン", hp: 1900, speed: 30, damage: 30, xp: 90, coin: 150, color: "#d5a84b", radius: 48 }
     };
 
@@ -1525,21 +1528,24 @@
       const d = g.stage.difficulty * pressure.spawn;
       const firstStage = g.stage.n === 1;
       const intervalBase = firstStage
-        ? (t < 14 ? 0.44 : t < 30 ? 0.28 : 0.19)
-        : (t < 10 ? 0.24 : t < 24 ? 0.15 : 0.1);
+        ? (t < 14 ? 0.36 : t < 30 ? 0.22 : 0.15)
+        : (t < 10 ? 0.18 : t < 24 ? 0.11 : 0.075);
       const packBase = firstStage
-        ? (t < 14 ? 2.2 : t < 30 ? 4.2 : 6.2)
-        : (t < 10 ? 5 : t < 24 ? 9 : 13);
-      const interval = Math.max(0.07, intervalBase / Math.sqrt(d));
-      const pack = Math.min(18, Math.ceil(packBase * Math.pow(d, 0.58)));
+        ? (t < 14 ? 3.2 : t < 30 ? 5.6 : 8.4)
+        : (t < 10 ? 7 : t < 24 ? 12 : 17);
+      const interval = Math.max(0.048, intervalBase / Math.sqrt(d));
+      const pack = Math.min(28, Math.ceil(packBase * Math.pow(d, 0.62)));
       g.spawn = interval;
       if (g.enemies.length > MAX_ENEMIES) return;
       const serialStart = safeLevel(g.spawnSerial || 0);
       for (let i = 0; i < pack; i++) {
         const roll = Math.random();
         let type = "slime";
-        if (t > 12 && roll < 0.32) type = "bat";
-        if (t > 30 && roll < 0.22 + Math.min(0.2, (d - 1) * 0.09)) type = "brute";
+        if (t > 8 && roll < 0.28) type = "bat";
+        if (t > 16 && roll < 0.42) type = "goblin";
+        if (t > 24 && roll < 0.26) type = "wisp";
+        if (t > 32 && roll < 0.2 + Math.min(0.2, (d - 1) * 0.08)) type = "brute";
+        if (t > 42 && roll < 0.1 + Math.min(0.16, (d - 1) * 0.045)) type = "knight";
         spawnEnemy(type, serialStart + i, pack);
       }
       g.spawnSerial = serialStart + pack;
@@ -1757,6 +1763,12 @@
       return clamp(offset, -12, 12) * step;
     }
 
+    function spreadOffset(index, count) {
+      const row = Math.floor(index / 9);
+      const col = index % 9;
+      return (col - (Math.min(9, count - row * 9) - 1) / 2) + row * 0.35;
+    }
+
     function updateFacilities(dt) {
       const g = game, p = g.player;
       const slots = facilitySlots(g);
@@ -1774,16 +1786,16 @@
       for (const slot of slots) {
         for (let i = 0; i < volleyCount; i++) {
           if (g.bullets.length >= MAX_BULLETS) break;
-          const offset = i - (volleyCount - 1) / 2;
+          const offset = spreadOffset(i, volleyCount);
           const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
-          const a = facilityFireAngle(slot) + offset * shotSpreadStep(p) * 0.5 * (1 - aimAssist);
+          const a = facilityFireAngle(slot) + offset * shotSpreadStep(p) * 1.1 * (1 - aimAssist);
           const crit = Math.random() < p.crit;
           const lateral = bulletSpawnOffset(offset, 4.2);
           g.bullets.push({
             x: slot.x + Math.cos(a + Math.PI / 2) * lateral,
-            y: slot.y - 24 + Math.sin(a + Math.PI / 2) * lateral - Math.abs(offset) * 0.08,
+            y: slot.y - 24 + Math.sin(a + Math.PI / 2) * lateral - Math.floor(i / 9) * 7,
             vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-            r: 7, life: 3.4, age: 0, speed, facility: true,
+            r: 6, life: 4.4, age: 0, speed, facility: true,
             bossPierce: g.bossSpawned,
             damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
           });
@@ -1860,9 +1872,12 @@
       const attackTargets = boss
         ? [boss, boss, ...enemies.filter(e => e !== boss)]
         : enemies;
-      const targets = [...threats.slice(0, threatLimit), ...attackTargets]
+      let targets = [...threats.slice(0, threatLimit), ...attackTargets]
         .slice(0, Math.max(1, Math.min(48, p.projectiles)));
-      if (!targets.length) return false;
+      if (!targets.length) {
+        const a = arenaRect();
+        targets = [{ type: "fallback", x: p.x, y: a.y + 56, r: 16, hp: 1, speed: 0 }];
+      }
       const room = Math.max(0, MAX_BULLETS - g.bullets.length);
       if (room <= 0) return true;
       const count = volleyCountFor(p, room);
@@ -1872,21 +1887,21 @@
       for (let i = 0; i < count; i++) {
         const target = targets[i % targets.length];
         const isBossTarget = target.type === "boss";
-        const offset = i - (count - 1) / 2;
+        const offset = spreadOffset(i, count);
         const muzzleX = p.x;
         const muzzleY = p.y - 24;
-        const spread = isBossTarget ? offset * spreadStep * 0.08 : offset * spreadStep * 0.42;
+        const spread = isBossTarget ? offset * spreadStep * 0.1 : offset * spreadStep * 1.05;
         const lead = aimLead({ x: muzzleX, y: muzzleY }, target, speed);
         const aim = predictedAimPoint(target, lead);
-        aim.y += clamp(offset * target.r * 0.12, -target.r * 0.42, target.r * 0.42);
+        aim.y += clamp(offset * target.r * 0.18, -target.r * 0.52, target.r * 0.52);
         const a = Math.atan2(aim.y - muzzleY, aim.x - muzzleX) + spread;
         const crit = Math.random() < p.crit;
         const lateral = bulletSpawnOffset(offset, 2.4);
         g.bullets.push({
           x: muzzleX + Math.cos(a + Math.PI / 2) * lateral,
-          y: muzzleY + Math.sin(a + Math.PI / 2) * lateral - Math.abs(offset) * 0.12,
+          y: muzzleY + Math.sin(a + Math.PI / 2) * lateral - Math.floor(i / 9) * 6,
           vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 7, life: 3.2, age: 0, speed,
+          r: 6, life: 4.2, age: 0, speed,
           bossPierce: isBossTarget,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
@@ -1998,7 +2013,7 @@
         b.y += b.vy * dt;
         b.age = (b.age || 0) + dt;
         b.life -= dt;
-        if (b.life <= 0 || b.x < a.x - 140 || b.x > a.x + a.w + 360 || b.y < a.y - 180 || b.y > a.y + a.h + 180) {
+        if (b.life <= 0 || b.x < a.x - 260 || b.x > a.x + a.w + 520 || b.y < a.y - 360 || b.y > a.y + a.h + 260) {
           g.bullets.splice(i, 1);
           continue;
         }
@@ -2608,10 +2623,29 @@
           ctx.lineTo(e.x + e.r + 8, e.y + e.r * 0.4);
           ctx.closePath();
           ctx.fill();
+        } else if (e.type === "goblin") {
+          ctx.fillRect(e.x - e.r * 0.75, e.y - e.r * 0.7, e.r * 1.5, e.r * 1.4);
+          ctx.fillStyle = "#4a2d18";
+          ctx.fillRect(e.x - e.r - 5, e.y - e.r * 0.2, 7, e.r);
+          ctx.fillRect(e.x + e.r - 2, e.y - e.r * 0.2, 7, e.r);
+          ctx.fillStyle = "#fff3d6";
+          ctx.fillRect(e.x - 5, e.y - 4, 4, 4);
+          ctx.fillRect(e.x + 2, e.y - 4, 4, 4);
+        } else if (e.type === "wisp") {
+          circle(e.x, e.y, e.r + 3, "#1a1008", true);
+          circle(e.x, e.y, e.r, color, true);
+          ctx.fillStyle = "#fff3d6";
+          ctx.fillRect(e.x - 3, e.y - 8, 6, 10);
         } else if (e.type === "brute") {
           ctx.fillRect(e.x - e.r, e.y - e.r, e.r * 2, e.r * 2);
           ctx.fillStyle = "#d9d3c2";
           ctx.fillRect(e.x - e.r * 0.55, e.y - e.r - 7, e.r * 1.1, 6);
+        } else if (e.type === "knight") {
+          ctx.fillRect(e.x - e.r * 0.85, e.y - e.r, e.r * 1.7, e.r * 2);
+          ctx.fillStyle = "#d9d3c2";
+          ctx.fillRect(e.x - e.r * 0.55, e.y - e.r - 8, e.r * 1.1, 7);
+          ctx.fillStyle = "#1a1008";
+          ctx.fillRect(e.x - e.r * 0.38, e.y - 3, e.r * 0.76, 5);
         } else if (e.type === "boss") {
           if (game.bossDamageFlash > 0) {
             ctx.globalAlpha = 0.34 + game.bossDamageFlash * 0.3;
@@ -2784,7 +2818,7 @@
       const p = game.player;
       $("hpText").textContent = `${formatStat(p.hp)} / ${formatStat(p.maxHp)}`;
       $("hpBar").style.width = `${clamp(p.hp / p.maxHp, 0, 1) * 100}%`;
-      $("xpText").textContent = `Lv.${p.level}`;
+      $("xpText").textContent = `Lv.${formatStat(p.level)}`;
       $("xpBar").style.width = `${clamp(p.xp / p.nextXp, 0, 1) * 100}%`;
       $("timeText").textContent = `${formatStage(game.stage.n)} ${fmtTime(Math.max(0, game.stage.duration - game.t))}`;
       $("runCoinText").textContent = `${formatMoney(game.runCoins)}C`;
@@ -2812,7 +2846,7 @@
           const row = list.querySelector(`[data-skill-row="${skill.id}"]`);
           if (!row) return;
           const lvEl = row.querySelector(".skill-lv");
-          if (lvEl) lvEl.textContent = `Lv.${game.shopLevels[skill.id] || 0}`;
+          if (lvEl) lvEl.textContent = `Lv.${formatStat(game.shopLevels[skill.id] || 0)}`;
           row.querySelectorAll("[data-skill]").forEach(btn => {
             const amount = Number(btn.dataset.amount || 1);
             const cost = runSkillCost(skill, amount);
@@ -2826,7 +2860,10 @@
           const row = list.querySelector(`[data-gadget-row="${gadget.id}"]`);
           if (!row) return;
           const lvEl = row.querySelector(".gadget-lv");
-          if (lvEl) lvEl.textContent = `Lv.${save.gadgets[gadget.id] || 0}`;
+          if (lvEl) {
+            const shownLv = gadget.id === "towerCore" ? Math.min(6, save.gadgets[gadget.id] || 0) : (save.gadgets[gadget.id] || 0);
+            lvEl.textContent = `Lv.${formatStat(shownLv)}`;
+          }
           row.querySelectorAll("[data-gadget]").forEach(btn => {
             const amount = Number(btn.dataset.amount || 1);
             const buyAmount = gadgetBuyAmount(gadget, amount);
@@ -2849,7 +2886,7 @@
         return `
           <div class="shop-buy" data-shop-row data-skill-row="${skill.id}">
             <span>
-              <strong>${skill.name} <span class="skill-lv">Lv.${lv}</span></strong>
+              <strong>${skill.name} <span class="skill-lv">Lv.${formatStat(lv)}</span></strong>
               <span class="tiny">${skill.desc} / 保存済み強化</span>
             </span>
             <div class="shop-actions">${buttons}</div>
@@ -2867,7 +2904,7 @@
         return `
           <div class="shop-buy" data-shop-row data-gadget-row="${gadget.id}">
             <span>
-              <strong>${gadget.name} <span class="gadget-lv">Lv.${lv}</span></strong>
+              <strong>${gadget.name} <span class="gadget-lv">Lv.${formatStat(lv)}</span></strong>
               <span class="tiny">${gadget.desc} / 戦闘装置</span>
             </span>
             <div class="shop-actions">${buttons}</div>
@@ -2927,7 +2964,7 @@
             <div class="row">
               <div>
                 <h3>${u.name}</h3>
-                <p class="tiny">${u.desc} / Lv.${lv} / 上限なし / 次単価 ${formatMoney(upgradeCost(u, 1))}C</p>
+                <p class="tiny">${u.desc} / Lv.${formatStat(lv)} / 上限なし / 次単価 ${formatMoney(upgradeCost(u, 1))}C</p>
               </div>
               <div class="equip-actions">${buttons}</div>
             </div>`;
@@ -3071,7 +3108,7 @@
       }).join("");
       const gadgetRows = GADGET_DEFS.map(g => {
         const lv = save.gadgets[g.id] || 0;
-        return `<div class="row"><span>${g.name}</span><span class="pill">Lv.${lv}</span></div>`;
+        return `<div class="row"><span>${g.name}</span><span class="pill">Lv.${formatStat(lv)}</span></div>`;
       }).join("");
       const ach = [
         ["minute", "1分生存"],
