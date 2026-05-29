@@ -622,7 +622,7 @@
           <div class="menu-grid">
             <button class="primary" data-action="start">プレイ開始</button>
             <button data-action="upgrades">強化</button>
-            <button data-action="equipment">装備/ガジェット</button>
+            <button data-action="equipment">装備</button>
             <button data-action="codex">図鑑</button>
             <button data-action="settings">設定</button>
             <button class="danger" data-action="reset">セーブリセット</button>
@@ -685,8 +685,8 @@
       <div class="menu">
         <div class="panel row">
           <div>
-            <h2>装備/ガジェット</h2>
-            <p class="sub">装備は1つだけ装着できます。ガジェットは購入すると保存され、次回以降も常に効果が出ます。</p>
+            <h2>装備</h2>
+            <p class="sub">装備はコインで購入します。1つだけ装着でき、不要な装備は売却できます。ガジェットはプレイ中ショップで購入できます。</p>
           </div>
           <button data-action="title">戻る</button>
         </div>
@@ -1807,10 +1807,12 @@
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
         ? "ボス出現中。倒すと次のステージへ"
-        : `ボスまで ${fmtTime(remaining)} / ステージは無限`;
+        : `ボスまで ${fmtTime(remaining)} / 強化とガジェットを購入`;
       $("shopCoinText").textContent = `${game.runCoins}C`;
       const list = $("runShopItems");
-      if (!forceList && list.children.length === SKILL_POOL.length) {
+      const expectedRows = SKILL_POOL.length + GADGET_DEFS.length;
+
+      if (!forceList && list.querySelectorAll("[data-shop-row]").length === expectedRows) {
         SKILL_POOL.forEach(skill => {
           const row = list.querySelector(`[data-skill-row="${skill.id}"]`);
           if (!row) return;
@@ -1825,9 +1827,26 @@
             btn.textContent = `+${amount} ${cost}C`;
           });
         });
+        GADGET_DEFS.forEach(gadget => {
+          const row = list.querySelector(`[data-gadget-row="${gadget.id}"]`);
+          if (!row) return;
+          const lvEl = row.querySelector(".gadget-lv");
+          if (lvEl) lvEl.textContent = `Lv.${save.gadgets[gadget.id] || 0}`;
+          const nextEl = row.querySelector(".gadget-next");
+          if (nextEl) nextEl.textContent = `次単価 ${gadgetCost(gadget, 1)}C`;
+          row.querySelectorAll("[data-gadget]").forEach(btn => {
+            const amount = Number(btn.dataset.amount || 1);
+            const cost = gadgetCost(gadget, amount);
+            const can = game.runCoins >= cost;
+            btn.classList.toggle("primary", can);
+            btn.classList.toggle("disabled", !can);
+            btn.textContent = `+${amount} ${cost}C`;
+          });
+        });
         return;
       }
-      list.innerHTML = SKILL_POOL.map(skill => {
+
+      const skillHtml = SKILL_POOL.map(skill => {
         const lv = game.shopLevels[skill.id] || 0;
         const buttons = [1, 10, 100].map(amount => {
           const cost = runSkillCost(skill, amount);
@@ -1835,14 +1854,37 @@
           return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-skill="${skill.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
         }).join("");
         return `
-          <div class="shop-buy" data-skill-row="${skill.id}">
+          <div class="shop-buy" data-shop-row data-skill-row="${skill.id}">
             <span>
               <strong>${skill.name} <span class="skill-lv">Lv.${lv}</span></strong>
-              <span class="tiny">${skill.desc}</span>
+              <span class="tiny">${skill.desc} / 保存済み強化</span>
             </span>
             <div class="shop-actions">${buttons}</div>
           </div>`;
       }).join("");
+
+      const gadgetHtml = GADGET_DEFS.map(gadget => {
+        const lv = save.gadgets[gadget.id] || 0;
+        const buttons = [1, 10].map(amount => {
+          const cost = gadgetCost(gadget, amount);
+          const can = game.runCoins >= cost;
+          return `<button class="buy-pack ${can ? "primary" : "disabled"}" data-gadget="${gadget.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
+        }).join("");
+        return `
+          <div class="shop-buy" data-shop-row data-gadget-row="${gadget.id}">
+            <span>
+              <strong>${gadget.name} <span class="gadget-lv">Lv.${lv}</span></strong>
+              <span class="tiny">${gadget.desc} / 保存ガジェット / <span class="gadget-next">次単価 ${gadgetCost(gadget, 1)}C</span></span>
+            </span>
+            <div class="shop-actions">${buttons}</div>
+          </div>`;
+      }).join("");
+
+      list.innerHTML = `
+        <div class="tiny" style="padding:4px 2px;color:var(--gold);font-weight:900;">戦闘強化</div>
+        ${skillHtml}
+        <div class="tiny" style="padding:6px 2px 4px;color:var(--lime);font-weight:900;">保存ガジェット</div>
+        ${gadgetHtml}`;
     }
 
     function renderTitleSummary() {
@@ -1913,11 +1955,30 @@
       if (!g) return;
       const levels = Math.max(1, Number(amount) || 1);
       const cost = gadgetCost(g, levels);
-      if (save.coins < cost) return;
-      save.coins -= cost;
+      const buyingInRun = game && screen === "game" && game.state === "playing";
+      const wallet = buyingInRun ? game.runCoins : save.coins;
+      if (wallet < cost) return;
+
+      if (buyingInRun) {
+        game.runCoins -= cost;
+        save.coins = Math.max(0, Math.floor(game.runCoins || 0));
+      } else {
+        save.coins -= cost;
+      }
+
       save.gadgets[id] = (save.gadgets[id] || 0) + levels;
-      saveGame();
-      renderEquipment();
+
+      if (buyingInRun) {
+        g.apply(game.player, levels);
+        game.skills.push(`${g.name} +${levels}`);
+        saveGame();
+        renderRunShop(true);
+        updateHud();
+        if (save.settings.damageNumbers) addText(game.player.x, game.player.y - 62, `${g.name} +${levels}`, "#9dff58");
+      } else {
+        saveGame();
+        renderEquipment();
+      }
       beep("coin");
     }
 
@@ -1934,33 +1995,13 @@
             <button class="${save.coins >= p.cost ? "primary" : "disabled"}" data-buy-equip="${p.id}">
               ${p.name}<br><span class="tiny">${p.cost}C / ${p.desc}</span>
             </button>`).join("")}
-        </div>`;
-      const gadgets = `
+        </div>
         <div class="row">
           <div>
-            <h3>ガジェットショップ</h3>
-            <p class="tiny">買ったガジェットは保存され、次回以降も常に発動します。価格はLvが上がるほど上昇します。</p>
+            <h3>保存ガジェット</h3>
+            <p class="tiny">ガジェットはプレイ中の左ショップから購入できます。現在の合計Lv: ${Object.values(save.gadgets || {}).reduce((a, b) => a + b, 0)}</p>
           </div>
-        </div>
-        ${GADGET_DEFS.map(g => {
-          const lv = save.gadgets[g.id] || 0;
-          const buttons = [1, 10].map(amount => {
-            const cost = gadgetCost(g, amount);
-            const can = save.coins >= cost;
-            return `<button class="${can ? "primary" : "disabled"}" data-gadget="${g.id}" data-amount="${amount}">+${amount} ${cost}C</button>`;
-          }).join("");
-          return `
-            <div class="equip-item">
-              <div class="row" style="padding-top:0;">
-                <div>
-                  <h3>${g.name}</h3>
-                  <p class="tiny">${g.desc} / Lv.${lv} / 次単価 ${gadgetCost(g, 1)}C</p>
-                </div>
-                <span class="pill">保存</span>
-              </div>
-              <div class="equip-actions">${buttons}</div>
-            </div>`;
-        }).join("")}`;
+        </div>`;
       const inventory = save.equipment.length ? save.equipment.map(e => {
         const equipped = e.id === save.equippedId;
         return `
@@ -1979,7 +2020,7 @@
             </div>
           </div>`;
       }).join("") : `<p class="sub">まだ装備がありません。上のショップでコインを使って購入できます。</p>`;
-      $("equipmentList").innerHTML = shop + gadgets + inventory;
+      $("equipmentList").innerHTML = shop + inventory;
     }
 
     function equipItem(id) {
