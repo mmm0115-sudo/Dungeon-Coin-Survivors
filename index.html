@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">左右移動だけで見守る、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.9.4</div>
+          <div class="version-badge" id="versionText">v0.9.5</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,7 +766,7 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.9.4";
+    const APP_VERSION = "v0.9.5";
     const BOSS_TARGET_SECONDS = 30;
     const MAX_ENEMIES = 170;
     const MAX_BULLETS = 150;
@@ -775,7 +775,7 @@
     const TAU = Math.PI * 2;
     const MAX_MONEY = 1e120;
     const MAX_COST = 1e100;
-    const MAX_STAT = 1e70;
+    const MAX_STAT = 1e120;
     const MONEY_UNITS = [
       "", "万", "億", "兆", "京", "垓", "秭", "穣", "溝", "澗",
       "正", "載", "極", "恒河沙", "阿僧祇", "那由他", "不可思議", "無量大数"
@@ -2012,7 +2012,11 @@
 
     function damageEnemy(e, amount, color, text = true) {
       const dmg = Math.min(MAX_STAT, Math.max(0, safeNumber(amount, 0)));
-      e.hp -= dmg;
+      const beforeHp = e.hp;
+      e.hp = Math.max(0, safeNumber(e.hp, 0) - dmg);
+      if (e.type === "boss" && dmg > 0 && e.hp === beforeHp && beforeHp > 0) {
+        e.hp = Math.max(0, beforeHp * (1 - 1e-10));
+      }
       e.hit = 1;
       game.damage = Math.min(MAX_STAT, safeNumber(game.damage, 0) + dmg);
       if (text && save.settings.damageNumbers && (e.type === "boss" || Math.random() < 0.35)) {
