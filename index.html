@@ -1068,11 +1068,11 @@
       const root = Math.sqrt(score);
       return {
         score,
-        hp: Math.min(18, 1 + root * 0.25 + score * 0.025),
-        spawn: Math.min(4.4, 1 + root * 0.13 + score * 0.009),
-        damage: Math.min(6.5, 1 + root * 0.12 + score * 0.012),
-        speed: Math.min(2.35, 1 + root * 0.055 + score * 0.0045),
-        boss: Math.min(6, 1 + root * 0.11 + score * 0.014)
+        hp: Math.min(36, 1 + root * 0.34 + score * 0.04),
+        spawn: Math.min(2.2, 1 + root * 0.06 + score * 0.0035),
+        damage: 1,
+        speed: 1,
+        boss: Math.min(14, 1 + root * 0.2 + score * 0.035)
       };
     }
     function threatText(g = game) {
@@ -1429,11 +1429,12 @@
       const x = a.x + a.w + margin + rand(0, 180) + (index % 4) * 18;
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
-      const scale = (0.82 + game.t / 190) * game.stage.difficulty * pressure.hp;
-      const damageScale = Math.max(0.55, Math.sqrt(scale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035)) * pressure.damage;
+      const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
+      const scale = stageScale * pressure.hp;
+      const damageScale = Math.max(0.55, Math.sqrt(stageScale)) * (0.92 + Math.min(1.4, game.stage.n * 0.035)) * pressure.damage;
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty) * pressure.speed, damage: def.damage * damageScale,
+        speed: def.speed * 1.08, damage: def.damage * damageScale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1500,8 +1501,7 @@
     function shotSpeed(p) {
       const rateBonus = Math.max(0, Math.log2(Math.max(1, p.fireRate / 2.15))) * 0.18;
       const deviceBonus = Math.min(4.2, p.bulletSpeedBonus || 0);
-      const threatBonus = Math.min(1.35, Math.sqrt(adaptiveDifficulty(game).speed) - 1);
-      return 760 * (1 + rateBonus + deviceBonus + threatBonus);
+      return 760 * (1 + rateBonus + deviceBonus);
     }
 
     function aimLead(p, target, speed) {
