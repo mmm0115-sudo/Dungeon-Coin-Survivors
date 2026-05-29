@@ -698,7 +698,7 @@
         <div class="panel row">
           <div>
             <h2>装備</h2>
-            <p class="sub">装備はコインで購入します。1つだけ装着でき、不要な装備は売却できます。冒険ガジェットはプレイ中ショップで購入できます。</p>
+            <p class="sub">装備はコインで購入します。1つだけ装着でき、不要な装備は売却できます。戦闘装置はプレイ中ショップで購入できます。</p>
           </div>
           <button data-action="title">戻る</button>
         </div>
@@ -802,8 +802,14 @@
       return `+${formatMoney(value)}C`;
     }
 
+    function formatStat(value) {
+      const n = Math.max(0, safeNumber(value, 0));
+      if (n < 1000) return String(Math.round(n));
+      return formatMoney(Math.round(n));
+    }
+
     const CHARACTERS = {
-      knight: { id: "knight", name: "Knight", hp: 205, speed: 230, damage: 32, fireRate: 1.75, crit: 0.06, magnet: 150, coin: 1, rare: 0 }
+      knight: { id: "knight", name: "Knight", hp: 205, speed: 250, damage: 32, fireRate: 2.15, crit: 0.06, magnet: 150, coin: 1, rare: 0 }
       // 追加例: mage / ninja / gambler をここに足すだけで設計上は拡張できます。
     };
 
@@ -831,12 +837,12 @@
     ];
 
     const GADGET_DEFS = [
-      { id: "laser", name: "魔導レーザ発射機", baseCost: 180, desc: "一定時間ごとに貫通レーザを放つ", apply: (p, lv) => p.laserLevel += lv },
-      { id: "ballista", name: "自動弩砲", baseCost: 150, desc: "弾数 +1 / 攻撃速度少し上昇", apply: (p, lv) => { p.projectiles += lv; p.fireRate *= Math.pow(1.04, lv); } },
-      { id: "coinSatchel", name: "古びた金貨袋", baseCost: 140, desc: "コイン獲得 +9%", apply: (p, lv) => p.coinMult *= Math.pow(1.09, lv) },
-      { id: "springBottle", name: "癒やしの泉瓶", baseCost: 170, desc: "最大HP +18 / 撃破時回復を少し追加", apply: (p, lv) => { p.maxHp += 18 * lv; p.hp += 18 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
-      { id: "stormStone", name: "雷よけの導石", baseCost: 260, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } },
-      { id: "magnetBoots", name: "旅人の磁石靴", baseCost: 130, desc: "回収範囲 +35", apply: (p, lv) => p.magnet += 35 * lv }
+      { id: "laser", name: "魔導レーザー発射装置", baseCost: 160, desc: "一定時間ごとに貫通レーザーを放つ", apply: (p, lv) => p.laserLevel += lv },
+      { id: "multiLauncher", name: "連装ボルト射出装置", baseCost: 145, desc: "同時発射数 +1 / 弾速アップ", apply: (p, lv) => { p.projectiles += lv; p.bulletSpeedBonus += 0.06 * lv; } },
+      { id: "aimAssist", name: "自動照準装置", baseCost: 155, desc: "弾の追尾性能と攻撃速度アップ", apply: (p, lv) => { p.aimAssist += lv; p.fireRate *= Math.pow(1.035, lv); } },
+      { id: "coinVacuum", name: "コイン吸引装置", baseCost: 135, desc: "回収範囲 +34 / コイン獲得 +5%", apply: (p, lv) => { p.magnet += 34 * lv; p.coinMult *= Math.pow(1.05, lv); } },
+      { id: "repairUnit", name: "自動修復装置", baseCost: 175, desc: "最大HP +20 / 撃破時回復を追加", apply: (p, lv) => { p.maxHp += 20 * lv; p.hp += 20 * lv; p.killHeal += Math.floor((lv + 1) / 2); } },
+      { id: "stormRegulator", name: "雷珠制御装置", baseCost: 240, desc: "雷珠の輪を広げ、雷ダメージ +6%", apply: (p, lv) => { p.orbSpread += lv; p.orbDamageMult *= Math.pow(1.06, lv); } }
     ];
 
     const ENEMY_TYPES = {
@@ -1040,9 +1046,9 @@
       const difficulty = base * late * endlessRamp * bossWall;
       return {
         n, world, floor, difficulty,
-        duration: 42 + Math.min(24, (world - 1) * 4 + floor * 1.3),
-        bossHp: 1.35 + difficulty * (n % 8 === 0 ? 1.05 : 0.58),
-        reward: 18 + n * 4
+        duration: 28 + Math.min(16, (world - 1) * 2.8 + floor * 0.9),
+        bossHp: 1.2 + difficulty * (n % 8 === 0 ? 0.92 : 0.5),
+        reward: 24 + n * 5
       };
     }
     function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
@@ -1116,6 +1122,8 @@
       player.laserLevel = Math.min(500, Math.max(0, safeLevel(player.laserLevel || 0)));
       player.orbSpread = Math.min(500, Math.max(0, safeLevel(player.orbSpread || 0)));
       player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
+      player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
+      player.bulletSpeedBonus = Math.min(20, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
     }
 
     function buildPlayerStats() {
@@ -1129,6 +1137,8 @@
       base.laserLevel = 0;
       base.orbSpread = 0;
       base.orbDamageMult = 1;
+      base.aimAssist = 0;
+      base.bulletSpeedBonus = 0;
       base.killHeal = 0;
       UPGRADE_DEFS.forEach(u => u.apply(base, save.upgrades[u.id] || 0));
       GADGET_DEFS.forEach(g => g.apply(base, save.gadgets[g.id] || 0));
@@ -1152,7 +1162,7 @@
         t: 0,
         totalTime: 0,
         distance: 0,
-        autoSpeed: 120,
+        autoSpeed: 170,
         shake: 0,
         spawn: 0,
         fire: 0,
@@ -1169,6 +1179,7 @@
           magnet: p.magnet, coinMult: p.coinMult, rare: p.rare,
           fireLevel: p.fireLevel, orbs: p.orbs, poison: p.poison, killHeal: p.killHeal,
           laserLevel: p.laserLevel, orbSpread: p.orbSpread, orbDamageMult: p.orbDamageMult,
+          aimAssist: p.aimAssist, bulletSpeedBonus: p.bulletSpeedBonus,
           level: 1, xp: 0, nextXp: 24, dashCd: 0, dashTime: 0, lastDir: 1
         },
         enemies: [],
@@ -1275,7 +1286,7 @@
       g.distance += g.autoSpeed * dt;
       g.spawn -= dt;
       g.fire -= dt;
-      g.orbAngle += dt * 2.7;
+      g.orbAngle += dt * 3.4;
       g.shake = Math.max(0, g.shake - dt * 18);
 
       movePlayer(dt);
@@ -1335,7 +1346,7 @@
 
     function gainIdleCoin(dt) {
       const g = game, p = g.player;
-      g.idleCoin += safeNumber(dt * (0.9 + g.t / 170 + g.stage.n * 0.03) * p.coinMult, 0);
+      g.idleCoin += safeNumber(dt * (1.35 + g.t / 120 + g.stage.n * 0.04) * p.coinMult, 0);
       if (!Number.isFinite(g.idleCoin)) g.idleCoin = MAX_MONEY;
       if (g.idleCoin >= 1) {
         const coins = clampMoney(Math.min(g.idleCoin, 1e18));
@@ -1353,8 +1364,8 @@
       if (g.bossSpawned) return;
       const t = g.t;
       const d = g.stage.difficulty;
-      const interval = Math.max(0.11, (t < 18 ? 0.48 : t < 45 ? 0.3 : 0.2) / Math.sqrt(d));
-      const pack = Math.min(20, Math.ceil((t < 18 ? 3 : t < 45 ? 5 : 8) * Math.pow(d, 0.72)));
+      const interval = Math.max(0.075, (t < 10 ? 0.32 : t < 24 ? 0.21 : 0.14) / Math.sqrt(d));
+      const pack = Math.min(26, Math.ceil((t < 10 ? 3 : t < 24 ? 6 : 9) * Math.pow(d, 0.72)));
       g.spawn = interval;
       if (g.enemies.length > 220) return;
       for (let i = 0; i < pack; i++) {
@@ -1376,7 +1387,7 @@
       const scale = (1 + game.t / 210) * game.stage.difficulty;
       game.enemies.push({
         type, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * (1 + game.t / 620) * Math.sqrt(game.stage.difficulty), damage: def.damage * Math.sqrt(scale),
+        speed: def.speed * 1.12 * (1 + game.t / 560) * Math.sqrt(game.stage.difficulty), damage: def.damage * Math.sqrt(scale),
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
@@ -1395,26 +1406,41 @@
     function autoAttack() {
       const g = game, p = g.player;
       if (g.fire > 0) return;
-      let target = null, best = Infinity;
-      for (const e of g.enemies) {
-        const d = dist2(p, e);
-        if (d < best) { best = d; target = e; }
-      }
-      if (!target) return;
+      const targets = [...g.enemies]
+        .sort((a, b) => {
+          const da = dist2(p, a);
+          const db = dist2(p, b);
+          return da === db ? a.hp - b.hp : da - db;
+        })
+        .slice(0, Math.max(1, Math.min(48, p.projectiles)));
+      if (!targets.length) return;
       g.fire = 1 / p.fireRate;
-      const baseA = Math.atan2(target.y - p.y, target.x - p.x);
-      const count = Math.max(1, Math.min(18, p.projectiles));
+      const count = Math.max(1, Math.min(36, p.projectiles));
       const damageScale = Math.max(1, p.projectiles / count);
       for (let i = 0; i < count; i++) {
-        const spread = (i - (count - 1) / 2) * 0.12;
-        const a = baseA + spread;
+        const target = targets[i % targets.length];
+        const repeat = Math.floor(i / targets.length);
+        const repeatCount = Math.ceil(count / targets.length);
+        const spread = (repeat - (repeatCount - 1) / 2) * 0.045;
+        const aim = predictedAimPoint(target, 0.18);
+        const a = Math.atan2(aim.y - p.y, aim.x - p.x) + spread;
         const crit = Math.random() < p.crit;
+        const speed = 660 * (1 + Math.min(1.8, p.bulletSpeedBonus || 0));
         g.bullets.push({
-          x: p.x, y: p.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520,
-          r: 5, life: 1.15, damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
+          x: p.x, y: p.y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+          r: 6, life: 2.8, target, speed, turn: 7.5 + Math.min(10, (p.aimAssist || 0) * 0.45),
+          damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
       }
       beep("shoot");
+    }
+
+    function predictedAimPoint(target, lead) {
+      const drift = (target.speed || 0) + (game ? game.autoSpeed * 0.62 : 0);
+      return {
+        x: target.x - drift * lead,
+        y: target.y
+      };
     }
 
     function updateLasers(dt) {
@@ -1467,10 +1493,21 @@
       const a = arenaRect();
       for (let i = g.bullets.length - 1; i >= 0; i--) {
         const b = g.bullets[i];
+        if (b.target && g.enemies.includes(b.target) && b.target.hp > 0) {
+          const aim = predictedAimPoint(b.target, 0.1);
+          const desired = Math.atan2(aim.y - b.y, aim.x - b.x);
+          const current = Math.atan2(b.vy, b.vx);
+          let delta = desired - current;
+          while (delta > Math.PI) delta -= TAU;
+          while (delta < -Math.PI) delta += TAU;
+          const next = current + clamp(delta, -b.turn * dt, b.turn * dt);
+          b.vx = Math.cos(next) * b.speed;
+          b.vy = Math.sin(next) * b.speed;
+        }
         b.x += b.vx * dt;
         b.y += b.vy * dt;
         b.life -= dt;
-        if (b.life <= 0 || b.x < a.x - 80 || b.x > a.x + a.w + 80 || b.y < a.y - 120 || b.y > a.y + a.h + 80) {
+        if (b.life <= 0 || b.x < a.x - 140 || b.x > a.x + a.w + 360 || b.y < a.y - 180 || b.y > a.y + a.h + 180) {
           g.bullets.splice(i, 1);
           continue;
         }
@@ -1801,7 +1838,7 @@
       $("resultStats").innerHTML = `
         <div class="row"><span>ステージ</span><strong>${formatStage(game.stage.n)}</strong></div>
         <div class="row"><span>合計時間</span><strong>${fmtTime(game.totalTime || game.t)}</strong></div>
-        <div class="row"><span>撃破数</span><strong>${game.kills}</strong></div>
+        <div class="row"><span>撃破数</span><strong>${formatStat(game.kills)}</strong></div>
         <div class="row"><span>獲得コイン</span><strong>${formatMoney(game.coinsEarned || 0)}C</strong></div>
         <div class="row"><span>現在の保存コイン</span><strong>${formatMoney(game.runCoins)}C</strong></div>
         <div class="row"><span>獲得装備</span><div>${eq}</div></div>
@@ -2085,13 +2122,13 @@
 
     function updateHud() {
       const p = game.player;
-      $("hpText").textContent = `${Math.ceil(p.hp)} / ${Math.ceil(p.maxHp)}`;
+      $("hpText").textContent = `${formatStat(p.hp)} / ${formatStat(p.maxHp)}`;
       $("hpBar").style.width = `${clamp(p.hp / p.maxHp, 0, 1) * 100}%`;
       $("xpText").textContent = `Lv.${p.level}`;
       $("xpBar").style.width = `${clamp(p.xp / p.nextXp, 0, 1) * 100}%`;
       $("timeText").textContent = `${formatStage(game.stage.n)} ${fmtTime(Math.max(0, game.stage.duration - game.t))}`;
       $("runCoinText").textContent = `${formatMoney(game.runCoins)}C`;
-      $("killText").textContent = `${game.kills} KOs`;
+      $("killText").textContent = `${formatStat(game.kills)} KOs`;
       const skills = game.skills.slice(-9).map(s => `<span class="pill">${s}</span>`).join("");
       $("skillList").innerHTML = skills || "<span class='tiny'>左の購入パネルで強化</span>";
     }
@@ -2105,7 +2142,7 @@
       $("stageText").textContent = `Stage ${formatStage(game.stage.n)}`;
       $("stageInfo").textContent = game.bossSpawned
         ? "ボス出現中。倒すと次のステージへ"
-        : `ボスまで ${fmtTime(remaining)} / スキルとガジェットを購入`;
+        : `ボスまで ${fmtTime(remaining)} / スキルと戦闘装置を購入`;
       $("shopCoinText").textContent = `${formatMoney(game.runCoins)}C`;
       const list = $("runShopItems");
       const expectedRows = SKILL_POOL.length + GADGET_DEFS.length;
@@ -2168,7 +2205,7 @@
           <div class="shop-buy" data-shop-row data-gadget-row="${gadget.id}">
             <span>
               <strong>${gadget.name} <span class="gadget-lv">Lv.${lv}</span></strong>
-              <span class="tiny">${gadget.desc} / 冒険ガジェット</span>
+              <span class="tiny">${gadget.desc} / 戦闘装置</span>
             </span>
             <div class="shop-actions">${buttons}</div>
           </div>`;
@@ -2177,7 +2214,7 @@
       list.innerHTML = `
         <div class="tiny shop-section">戦闘強化</div>
         ${skillHtml}
-        <div class="tiny shop-section" style="color:var(--lime);">冒険ガジェット</div>
+        <div class="tiny shop-section" style="color:var(--lime);">戦闘装置</div>
         ${gadgetHtml}`;
     }
 
@@ -2185,9 +2222,9 @@
       $("saveSummary").innerHTML = `
         所持コイン: <b>${formatMoney(save.coins)}C</b><br>
         最高生存時間: <b>${fmtTime(save.best.time)}</b><br>
-        最高撃破数: <b>${save.best.kills}</b><br>
+        最高撃破数: <b>${formatStat(save.best.kills)}</b><br>
         所持装備: <b>${save.equipment.length}</b><br>
-        ガジェットLv合計: <b>${Object.values(save.gadgets || {}).reduce((a, b) => a + safeLevel(b), 0)}</b><br>
+        戦闘装置Lv合計: <b>${Object.values(save.gadgets || {}).reduce((a, b) => a + safeLevel(b), 0)}</b><br>
         保存済み戦闘強化Lv合計: <b>${Object.values(save.runUpgrades || {}).reduce((a, b) => a + safeLevel(b), 0)}</b>
       `;
       const c = CHARACTERS.knight;
@@ -2292,8 +2329,8 @@
         </div>
         <div class="row">
           <div>
-            <h3>冒険ガジェット</h3>
-            <p class="tiny">プレイ中の左ショップで購入できます。レーザ発射機などはここに記録されます。現在の合計Lv: ${Object.values(save.gadgets || {}).reduce((a, b) => a + safeLevel(b), 0)}</p>
+            <h3>戦闘装置</h3>
+            <p class="tiny">プレイ中の左ショップで購入できます。レーザー発射装置などはここに記録されます。現在の合計Lv: ${Object.values(save.gadgets || {}).reduce((a, b) => a + safeLevel(b), 0)}</p>
           </div>
         </div>`;
       const inventory = save.equipment.length ? save.equipment.map(e => {
@@ -2369,7 +2406,7 @@
         </div>
         <div style="height:12px"></div>
         <div class="two-col">
-          <div><h3>スキル</h3>${skillRows}<h3 style="margin-top:12px;">ガジェット</h3>${gadgetRows}</div>
+          <div><h3>スキル</h3>${skillRows}<h3 style="margin-top:12px;">戦闘装置</h3>${gadgetRows}</div>
           <div><h3>実績</h3>${ach}<h3 style="margin-top:12px;">ステージ</h3>${stageRows}</div>
         </div>`;
     }
