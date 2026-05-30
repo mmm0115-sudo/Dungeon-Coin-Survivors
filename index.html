@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.8</div>
+          <div class="version-badge" id="versionText">v0.10.9</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,8 +766,8 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.8";
-    const BOSS_TARGET_SECONDS = 4;
+    const APP_VERSION = "v0.10.9";
+    const BOSS_TARGET_SECONDS = 2;
     const MAX_ENEMIES = 230;
     const MAX_BULLETS = 1200;
     const MAX_PARTICLES = 140;
@@ -788,12 +788,23 @@
       return Number.isFinite(n) ? n : fallback;
     }
 
+    function boundedNumber(value, min, max, fallback = min) {
+      const n = Number(value);
+      if (Number.isFinite(n)) return Math.min(max, Math.max(min, n));
+      if (n === Infinity) return max;
+      if (n === -Infinity) return min;
+      return fallback;
+    }
+
     function safeLevel(value) {
       return Math.max(0, Math.floor(safeNumber(value, 0)));
     }
 
     function clampMoney(value) {
-      const n = safeNumber(value, 0);
+      const raw = Number(value);
+      if (raw === Infinity) return MAX_MONEY;
+      if (!Number.isFinite(raw)) return 0;
+      const n = raw;
       if (n <= 0) return 0;
       return Math.min(MAX_MONEY, Math.floor(n));
     }
@@ -1267,26 +1278,26 @@
        ========================================================= */
     function clampPlayerStats(player) {
       if (!player) return;
-      player.maxHp = Math.min(MAX_STAT, Math.max(1, safeNumber(player.maxHp, 1)));
-      player.hp = Math.min(player.maxHp, Math.max(0, safeNumber(player.hp, player.maxHp)));
-      player.damage = Math.min(MAX_STAT, Math.max(1, safeNumber(player.damage, 1)));
-      player.fireRate = Math.min(240, Math.max(0.1, safeNumber(player.fireRate, 1)));
-      player.coinMult = Math.min(1e30, Math.max(0, safeNumber(player.coinMult, 1)));
-      player.magnet = Math.min(20000, Math.max(0, safeNumber(player.magnet, 0)));
+      player.maxHp = boundedNumber(player.maxHp, 1, MAX_STAT, 1);
+      player.hp = boundedNumber(player.hp, 0, player.maxHp, player.maxHp);
+      player.damage = boundedNumber(player.damage, 1, MAX_STAT, 1);
+      player.fireRate = boundedNumber(player.fireRate, 0.1, 240, 1);
+      player.coinMult = boundedNumber(player.coinMult, 0, 1e30, 1);
+      player.magnet = boundedNumber(player.magnet, 0, 20000, 0);
       player.projectiles = Math.min(320, Math.max(1, safeLevel(player.projectiles || 1)));
-      player.crit = Math.min(0.85, Math.max(0, safeNumber(player.crit, 0)));
+      player.crit = boundedNumber(player.crit, 0, 0.85, 0);
       player.fireLevel = Math.min(500, Math.max(0, safeLevel(player.fireLevel || 0)));
       player.poison = Math.min(500, Math.max(0, safeLevel(player.poison || 0)));
       player.orbs = Math.min(240, Math.max(0, safeLevel(player.orbs || 0)));
-      player.killHeal = Math.min(10000, Math.max(0, safeNumber(player.killHeal, 0)));
+      player.killHeal = boundedNumber(player.killHeal, 0, 10000, 0);
       player.laserLevel = Math.min(500, Math.max(0, safeLevel(player.laserLevel || 0)));
       player.orbSpread = Math.min(500, Math.max(0, safeLevel(player.orbSpread || 0)));
-      player.orbDamageMult = Math.min(1e20, Math.max(1, safeNumber(player.orbDamageMult, 1)));
+      player.orbDamageMult = boundedNumber(player.orbDamageMult, 1, 1e20, 1);
       player.aimAssist = Math.min(500, Math.max(0, safeLevel(player.aimAssist || 0)));
-      player.bulletSpeedBonus = Math.min(40, Math.max(0, safeNumber(player.bulletSpeedBonus, 0)));
+      player.bulletSpeedBonus = boundedNumber(player.bulletSpeedBonus, 0, 40, 0);
       player.facilityCount = Math.min(6, Math.max(0, safeLevel(player.facilityCount || 0)));
-      player.facilityDamage = Math.min(1e20, Math.max(1, safeNumber(player.facilityDamage, 1)));
-      player.facilityRate = Math.min(60, Math.max(1, safeNumber(player.facilityRate, 1)));
+      player.facilityDamage = boundedNumber(player.facilityDamage, 1, 1e20, 1);
+      player.facilityRate = boundedNumber(player.facilityRate, 1, 60, 1);
     }
 
     function buildPlayerStats() {
@@ -1622,10 +1633,10 @@
       const anchor = bossAnchor();
       boss.x = anchor.x;
       boss.y = anchor.y;
-      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 0.5;
-      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.05, game.stage.n * 0.001));
-      boss.hp = clamp(scaledHp, targetHp * 0.08, targetHp * 0.18);
-      boss.hp *= 0.001;
+      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 0.18;
+      const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.03, game.stage.n * 0.0007));
+      boss.hp = clamp(scaledHp, targetHp * 0.025, targetHp * 0.07);
+      boss.hp *= 0.0002;
       boss.maxHp = boss.hp;
       boss.hpRatio = 1;
       boss.damageRatioTaken = 0;
@@ -2185,7 +2196,7 @@
     }
 
     function damageEnemy(e, amount, color, text = true) {
-      const dmg = Math.min(MAX_STAT * 1e6, Math.max(0, safeNumber(amount, 0)));
+      const dmg = boundedNumber(amount, 0, MAX_STAT * 1e6, 0);
       const beforeHp = e.hp;
       if (e.type === "boss" && dmg > 0 && safeNumber(e.maxHp, 0) > 0) {
         const rawRatioDamage = dmg / e.maxHp;
