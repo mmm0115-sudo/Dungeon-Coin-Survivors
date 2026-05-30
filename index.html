@@ -652,7 +652,7 @@
         <div class="panel title-card">
           <h1>Dungeon Coin Survivors</h1>
           <p class="sub">砲台陣形を育てて迎え撃つ、コイン購入型のレトロRPGサバイバル。</p>
-          <div class="version-badge" id="versionText">v0.10.9</div>
+          <div class="version-badge" id="versionText">v0.10.10</div>
         </div>
         <div class="panel">
           <div class="menu-grid">
@@ -766,11 +766,11 @@
        - キャラ、強化、装備効果、敵バランスはこの付近から調整できます。
        ========================================================= */
     const SAVE_KEY = "dungeonCoinSurvivorsSaveV1";
-    const APP_VERSION = "v0.10.9";
-    const BOSS_TARGET_SECONDS = 2;
+    const APP_VERSION = "v0.10.10";
+    const BOSS_TARGET_SECONDS = 7;
     const MAX_ENEMIES = 230;
-    const MAX_BULLETS = 1200;
-    const MAX_PARTICLES = 140;
+    const MAX_BULLETS = 1800;
+    const MAX_PARTICLES = 220;
     const MAX_TEXTS = 48;
     const MAX_VISIBLE_FACILITIES = 6;
     const MAX_FACILITY_VOLLEY = 32;
@@ -1583,10 +1583,11 @@
 
     function enemySpawnY(a, type, index, pack) {
       if (type === "boss") return a.y + a.h * 0.22;
-      const topBand = Math.max(58, a.h * 0.18);
-      const stagger = (index % Math.max(1, pack)) * Math.min(8, 42 / Math.max(1, pack));
-      const maxY = Math.max(a.y + 44, playerLaneY() - 118);
-      return clamp(a.y + 26 + rand(0, topBand) + stagger, a.y + 24, maxY);
+      const maxY = Math.max(a.y + 80, playerLaneY() - 118);
+      const band = Math.max(70, maxY - a.y - 34);
+      const packRatio = (index % Math.max(1, pack)) / Math.max(1, pack);
+      const stagger = Math.sin((index + packRatio * 11) * 1.7) * 22;
+      return clamp(a.y + 34 + rand(0, band) + stagger, a.y + 30, maxY);
     }
 
     function bossAnchor() {
@@ -1600,9 +1601,14 @@
     function spawnEnemy(type, index = 0, pack = 1) {
       const def = ENEMY_TYPES[type];
       const a = arenaRect();
-      const lane = type === "boss" ? 1 : Math.floor(rand(0, 3));
-      const laneJitter = type === "boss" ? 0 : rand(-a.w * 0.095, a.w * 0.095);
-      const x = clamp(laneX(lane, a) + laneJitter, a.x + def.radius + 10, a.x + a.w - def.radius - 10);
+      const edgePad = def.radius + 14;
+      const freeX = a.x + edgePad + Math.random() * Math.max(1, a.w - edgePad * 2);
+      const laneSeed = type === "boss" ? 1 : Math.floor(rand(0, 3));
+      const lanePull = laneX(laneSeed, a);
+      const x = type === "boss"
+        ? lanePull
+        : clamp(freeX * 0.72 + lanePull * 0.28 + rand(-a.w * 0.035, a.w * 0.035), a.x + edgePad, a.x + a.w - edgePad);
+      const lane = type === "boss" ? 1 : nearestLaneIndex(x, a);
       const y = enemySpawnY(a, type, index, pack);
       const pressure = adaptiveDifficulty(game);
       const stageScale = (0.82 + game.t / 190) * game.stage.difficulty;
@@ -1633,10 +1639,9 @@
       const anchor = bossAnchor();
       boss.x = anchor.x;
       boss.y = anchor.y;
-      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 0.18;
+      const scaledHp = boss.hp * game.stage.bossHp * adaptiveDifficulty(game).boss * 0.42;
       const targetHp = estimateBossDps(p, game) * BOSS_TARGET_SECONDS * (1 + Math.min(0.03, game.stage.n * 0.0007));
-      boss.hp = clamp(scaledHp, targetHp * 0.025, targetHp * 0.07);
-      boss.hp *= 0.0002;
+      boss.hp = clamp(scaledHp, targetHp * 0.65, targetHp * 1.05);
       boss.maxHp = boss.hp;
       boss.hpRatio = 1;
       boss.damageRatioTaken = 0;
@@ -1646,7 +1651,7 @@
     }
 
     function estimateBossDps(p, g = game) {
-      const bulletDps = p.damage * Math.max(1, p.projectiles) * Math.max(0.1, p.fireRate) * (1 + p.crit);
+      const bulletDps = p.damage * volleyCountFor(p) * Math.max(0.1, p.fireRate) * (1 + p.crit);
       const laserCd = Math.max(0.72, 2.9 - (p.laserLevel || 0) * 0.038);
       const laserDps = p.laserLevel > 0 ? p.damage * (1.2 + p.laserLevel * 0.09) / laserCd : 0;
       const facilitySlotsCount = totalFacilityCount(g);
@@ -1773,8 +1778,8 @@
       const need = Math.max(0, safeLevel(count));
       if (need <= 0) return;
       while (g.bullets.length > Math.max(0, MAX_BULLETS - need)) {
-        const oldFacility = g.bullets.findIndex(b => b.facility);
-        g.bullets.splice(oldFacility >= 0 ? oldFacility : 0, 1);
+        const oldBullet = g.bullets.findIndex(b => (b.age || 0) > 1.15);
+        g.bullets.splice(oldBullet >= 0 ? oldBullet : 0, 1);
       }
     }
 
@@ -1795,6 +1800,14 @@
 
     function radialAngle(index, count, phase = 0, twist = 0) {
       return phase + TAU * (index / Math.max(1, count)) + twist;
+    }
+
+    function forwardSprayAngle(index, count, phase = 0, twist = 0) {
+      const c = Math.max(1, count);
+      const t = c === 1 ? 0 : index / (c - 1) - 0.5;
+      const fan = Math.PI * 0.84;
+      const wobble = Math.sin(phase + index * 1.77 + twist) * 0.035;
+      return clamp(-Math.PI / 2 + t * fan + twist * 0.18 + wobble, -Math.PI + 0.22, -0.22);
     }
 
     function spreadOffset(index, count) {
@@ -1826,7 +1839,7 @@
           const aimAssist = Math.min(0.85, safeLevel(p.aimAssist || 0) * 0.015);
           const a = bossMode
             ? facilityFireAngle(slot) + offset * shotSpreadStep(p) * 0.22 * (1 - aimAssist)
-            : radialAngle(i, volleyCount, sprayPhase, slot.lane * 0.13 + slot.row * 0.19);
+            : forwardSprayAngle(i, volleyCount, sprayPhase, slot.lane * 0.35 + slot.row * 0.18);
           const crit = Math.random() < p.crit;
           const lateral = bossMode ? bulletSpawnOffset(offset, 1.5) : bulletSpawnOffset(offset, 0.55);
           const forward = bossMode ? 7 : 8 + (i % 4) * 1.5;
@@ -1834,7 +1847,7 @@
             x: slot.x + Math.cos(a) * forward + Math.cos(a + Math.PI / 2) * lateral,
             y: slot.y - (bossMode ? 22 : 10) + Math.sin(a) * forward + Math.sin(a + Math.PI / 2) * lateral,
             vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-            r: 6, life: 4.4, age: 0, speed, facility: true,
+            r: 6, life: bossMode ? 4.6 : 6.2, age: 0, speed, facility: true,
             bossPierce: bossMode,
             damage: damage * (crit ? 2 : 1), crit, fire: p.fireLevel
           });
@@ -1928,7 +1941,7 @@
           aim.y += clamp(offset * target.r * 0.08, -target.r * 0.25, target.r * 0.25);
           a = Math.atan2(aim.y - muzzleY, aim.x - muzzleX) + spread;
         } else {
-          a = radialAngle(i, count, sprayPhase);
+          a = forwardSprayAngle(i, count, sprayPhase);
         }
         const crit = Math.random() < p.crit;
         const lateral = bossMode ? bulletSpawnOffset(offset, 1.2) : bulletSpawnOffset(offset, 0.45);
@@ -1937,7 +1950,7 @@
           x: muzzleX + Math.cos(a) * forward + Math.cos(a + Math.PI / 2) * lateral,
           y: muzzleY + Math.sin(a) * forward + Math.sin(a + Math.PI / 2) * lateral,
           vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
-          r: 6, life: 4.2, age: 0, speed,
+          r: 6, life: bossMode ? 4.6 : 5.8, age: 0, speed,
           bossPierce: bossMode && isBossTarget,
           damage: p.damage * damageScale * (crit ? 2 : 1), crit, fire: p.fireLevel
         });
@@ -2220,7 +2233,7 @@
       p.hp = Math.min(p.maxHp, p.hp + p.killHeal);
       drop(e.x, e.y, "xp", def.xp, "#6f8db8");
       drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", clampMoney(Math.ceil(safeNumber(def.coin * p.coinMult, MAX_MONEY))), "#f0c66e");
-      burst(e.x, e.y, def.color, 12);
+      burst(e.x, e.y, def.color, e.type === "boss" ? 34 : 18);
       beep("kill");
       if (e.type === "boss") {
         advanceStage();
@@ -2789,8 +2802,25 @@
 
     function drawParticles() {
       for (const p of game.particles) {
-        ctx.globalAlpha = p.life / p.max;
-        circle(p.x, p.y, p.r, p.color, true);
+        const alpha = clamp(p.life / p.max, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        if (p.kind === "ring") {
+          circle(p.x, p.y, p.r, p.color, false, p.lw || 2);
+        } else if (p.kind === "shard") {
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle || 0);
+          ctx.fillStyle = p.color;
+          ctx.fillRect(-p.r, -p.r * 0.55, p.r * 2.1, p.r * 1.1);
+          ctx.strokeStyle = "rgba(26,16,8,0.52)";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(-p.r, -p.r * 0.55, p.r * 2.1, p.r * 1.1);
+        } else {
+          circle(p.x, p.y, p.r, p.color, true);
+          ctx.globalAlpha = alpha * 0.42;
+          circle(p.x - p.r * 0.25, p.y - p.r * 0.25, Math.max(1.2, p.r * 0.36), "#fff3d6", true);
+        }
+        ctx.restore();
       }
       ctx.globalAlpha = 1;
     }
@@ -2815,9 +2845,31 @@
 
     function burst(x, y, color, n) {
       const room = Math.max(0, MAX_PARTICLES - game.particles.length);
-      for (let i = 0; i < Math.min(n, room); i++) {
-        const a = rand(0, TAU), s = rand(70, 220);
-        game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, r: rand(2, 5), color, life: rand(0.25, 0.55), max: 0.55 });
+      const count = Math.min(n, room);
+      for (let i = 0; i < count; i++) {
+        if (game.particles.length >= MAX_PARTICLES) break;
+        if (i < 2) {
+          const life = 0.34 + i * 0.1;
+          game.particles.push({ kind: "ring", x, y, vx: 0, vy: 0, r: 8 + i * 5, grow: 95 + i * 45, color, life, max: life, lw: 2 + i });
+          continue;
+        }
+        const a = rand(0, TAU);
+        const s = rand(95, 290);
+        const kind = i % 3 === 0 ? "shard" : "spark";
+        const life = rand(0.34, 0.74);
+        game.particles.push({
+          kind, x, y,
+          vx: Math.cos(a) * s,
+          vy: Math.sin(a) * s,
+          r: kind === "shard" ? rand(3.5, 7) : rand(2, 5),
+          color,
+          life,
+          max: life,
+          angle: rand(0, TAU),
+          spin: rand(-9, 9),
+          grow: kind === "spark" ? rand(-1, 4) : 0,
+          gravity: rand(20, 80)
+        });
       }
     }
 
@@ -2831,7 +2883,11 @@
       for (let i = g.particles.length - 1; i >= 0; i--) {
         const p = g.particles[i];
         p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
-        p.vx *= 0.9; p.vy *= 0.9;
+        p.vy += (p.gravity || 0) * dt;
+        p.r = Math.max(0, p.r + (p.grow || 0) * dt);
+        p.angle = (p.angle || 0) + (p.spin || 0) * dt;
+        p.vx *= p.kind === "ring" ? 0.98 : 0.88;
+        p.vy *= p.kind === "ring" ? 0.98 : 0.88;
         if (p.life <= 0) g.particles.splice(i, 1);
       }
       for (let i = g.texts.length - 1; i >= 0; i--) {
