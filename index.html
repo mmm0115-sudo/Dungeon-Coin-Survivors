@@ -603,6 +603,62 @@
       .menu-grid button { min-height: 48px; }
       h1 { font-size: clamp(28px, 8vw, 52px); }
     }
+
+    /* 縦画面スマホ：小さい画面でショップ高さ削減 */
+    @media (orientation: portrait) and (max-height: 680px) {
+      :root { --shop-h: clamp(150px, 26vh, 200px); }
+      .hud-box { padding: 5px 8px; }
+      .bar { height: 12px; }
+      .hud-line { margin-bottom: 3px; font-size: 11px; }
+    }
+
+    /* コンボバッジ */
+    .combo-badge {
+      position: absolute;
+      left: 50%;
+      top: 36%;
+      transform: translateX(-50%);
+      z-index: 9;
+      pointer-events: none;
+      display: none;
+      font-size: clamp(16px, 4.5vw, 32px);
+      font-weight: 1000;
+      color: #f0c66e;
+      text-shadow: 2px 2px 0 #4a2414, 0 0 18px rgba(240,198,110,0.7);
+      white-space: nowrap;
+    }
+    .combo-badge.show {
+      display: block;
+      animation: combo-pop 0.85s ease forwards;
+    }
+    @keyframes combo-pop {
+      0%   { transform: translateX(-50%) scale(0.6); opacity: 0; }
+      18%  { transform: translateX(-50%) scale(1.18); opacity: 1; }
+      75%  { transform: translateX(-50%) scale(1); opacity: 1; }
+      100% { transform: translateX(-50%) scale(0.88); opacity: 0; }
+    }
+
+    /* ダッシュ残像 */
+    .dash-trail {
+      position: absolute;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* タッチ操作：縦画面での視認性向上 */
+    @media (orientation: portrait) {
+      .stick {
+        width: 160px;
+        height: 88px;
+        background: rgba(24, 68, 45, 0.38);
+        border-color: rgba(232, 198, 124, 0.7);
+      }
+      .dash-touch {
+        width: 96px;
+        height: 96px;
+        font-size: 15px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -646,6 +702,7 @@
     </div>
 
     <div id="rareToast" class="toast"></div>
+    <div id="comboBadge" class="combo-badge"></div>
 
     <section id="title" class="screen active">
       <div class="menu">
@@ -1218,7 +1275,7 @@
       if (screens[name]) screens[name].classList.add("active");
       $("hud").classList.toggle("active", name === "game");
       $("runShop").classList.toggle("active", name === "game");
-      $("touchLayer").classList.toggle("active", false);
+      $("touchLayer").classList.toggle("active", name === "game" && isTouchDevice());
       if (name === "title") renderTitleSummary();
       if (name === "upgrades") renderUpgrades();
       if (name === "equipment") renderEquipment();
@@ -1354,6 +1411,8 @@
         idleCoin: 0,
         bossSpawned: false,
         resultReason: "defeat",
+        combo: 0, comboTimer: 0,
+        damageFlash: 0,
         player: {
           x: laneX(1, a), y: playerLaneY(), r: 14,
           hp: p.hp, maxHp: p.maxHp, speed: p.speed, damage: p.damage,
@@ -1506,6 +1565,8 @@
       updateDrops(dt);
       updateParticles(dt);
       applyAuraDamage(dt);
+      updateCombo(dt);
+      g.damageFlash = Math.max(0, (g.damageFlash || 0) - dt * 3.5);
       updateHud();
       g.shopUiTimer -= dt;
       if (g.shopUiTimer <= 0) {
@@ -1529,9 +1590,32 @@
       const p = game.player;
       const a = arenaRect();
       p.dashCd = Math.max(0, p.dashCd - dt);
-      p.dashTime = 0;
+      p.dashTime = Math.max(0, (p.dashTime || 0) - dt);
+
+      const axis = movementAxis();
+      if (input.dashPressed && p.dashCd <= 0) {
+        const dir = axis !== 0 ? Math.sign(axis) : (p.lastDir || 1);
+        p.dashCd = 1.4;
+        p.dashTime = 0.2;
+        p.dashVx = dir * 660;
+        beep("dash");
+        // ダッシュ方向ヒント
+        if (save.settings.damageNumbers) {
+          addText(p.x, p.y - 18, dir > 0 ? "→DASH!" : "DASH!←", "#f0c66e");
+        }
+      }
       input.dashPressed = false;
-      p.x = clamp(laneX(1, a), a.x + p.r, a.x + a.w - p.r);
+
+      if (p.dashTime > 0) {
+        p.x += p.dashVx * dt;
+      } else {
+        if (axis !== 0) {
+          p.x += axis * p.speed * dt;
+          p.lastDir = Math.sign(axis);
+        }
+      }
+
+      p.x = clamp(p.x, a.x + p.r, a.x + a.w - p.r);
       p.y = playerLaneY();
     }
 
@@ -1693,6 +1777,7 @@
           if (save.settings.damageNumbers) addText(p.x, p.y - 30, `-${Math.ceil(s.damage)}`, "#c75246");
           g.bossShots.splice(i, 1);
           g.shake = save.settings.shake ? 7 : 0;
+          g.damageFlash = Math.min(1, (g.damageFlash || 0) + 0.9);
         }
       }
     }
@@ -2147,6 +2232,7 @@
       }
       if (touchDamage > 0) {
         p.hp -= Math.min(touchDamage, 5 + g.stage.difficulty * 3.8) * dt;
+        g.damageFlash = Math.min(1, (g.damageFlash || 0) + 0.7);
       }
     }
 
@@ -2231,8 +2317,17 @@
       g.kills++;
       save.codex.enemies[e.type] = (save.codex.enemies[e.type] || 0) + 1;
       p.hp = Math.min(p.maxHp, p.hp + p.killHeal);
+
+      // コンボシステム
+      g.combo = (g.combo || 0) + 1;
+      g.comboTimer = 2.8;
+      const comboMult = g.combo >= 20 ? 3 : g.combo >= 10 ? 2 : g.combo >= 5 ? 1.5 : 1;
+      if (g.combo === 5 || g.combo === 10 || g.combo === 20 || (g.combo >= 30 && g.combo % 10 === 0)) {
+        showComboBadge(g.combo, comboMult);
+      }
+
       drop(e.x, e.y, "xp", def.xp, "#6f8db8");
-      drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", clampMoney(Math.ceil(safeNumber(def.coin * p.coinMult, MAX_MONEY))), "#f0c66e");
+      drop(e.x + rand(-8, 8), e.y + rand(-8, 8), "coin", clampMoney(Math.ceil(safeNumber(def.coin * p.coinMult * comboMult, MAX_MONEY))), "#f0c66e");
       burst(e.x, e.y, def.color, e.type === "boss" ? 34 : 18);
       beep("kill");
       if (e.type === "boss") {
@@ -2503,6 +2598,7 @@
         drawTexts();
       }
       ctx.restore();
+      if (game) drawDamageVignette(game.damageFlash || 0);
       if (screen !== "game" && !game) drawAttract();
     }
 
@@ -2895,6 +2991,37 @@
         t.y += t.vy * dt; t.life -= dt;
         if (t.life <= 0) g.texts.splice(i, 1);
       }
+    }
+
+    function updateCombo(dt) {
+      const g = game;
+      if (!g.comboTimer) return;
+      g.comboTimer -= dt;
+      if (g.comboTimer <= 0) {
+        g.combo = 0;
+        g.comboTimer = 0;
+      }
+    }
+
+    function showComboBadge(count, mult) {
+      const el = $("comboBadge");
+      const multStr = mult >= 3 ? "×3 COIN" : mult >= 2 ? "×2 COIN" : "×1.5 COIN";
+      el.textContent = `${count} COMBO! ${multStr}`;
+      el.classList.remove("show");
+      void el.offsetWidth;
+      el.classList.add("show");
+      beep("level");
+    }
+
+    function drawDamageVignette(flash) {
+      if (flash <= 0) return;
+      const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 0.82);
+      grad.addColorStop(0, "transparent");
+      grad.addColorStop(1, `rgba(199,82,70,${flash * 0.72})`);
+      ctx.save();
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
     }
 
     function flashToast(text, color, ms = 1900) {
