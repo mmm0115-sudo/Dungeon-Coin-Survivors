@@ -1187,10 +1187,12 @@
       const floorScale = 1 + (floor - 1) * 0.18;
       const endlessRamp = n >= 49 ? Math.pow(1.035, n - 48) : 1;
       const bossWall = n % 8 === 0 ? 1.85 : 1;
-      const difficulty = (0.88 + worldScale * floorScale) * endlessRamp * bossWall;
+      // 序盤ステージ（1〜5）を緩やかにし、後半はそのまま
+      const earlyEase = Math.max(0, (6 - n) * 0.08);
+      const difficulty = (0.88 - earlyEase + worldScale * floorScale) * endlessRamp * bossWall;
       return {
         n, world, floor, difficulty,
-        duration: n === 1 ? 38 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
+        duration: n === 1 ? 42 : 29 + Math.min(15, (world - 1) * 2.4 + floor * 0.75),
         bossHp: 1.1 + difficulty * (n % 8 === 0 ? 0.88 : 0.56),
         reward: 24 + n * 5
       };
@@ -1212,11 +1214,14 @@
       const root = Math.sqrt(score);
       return {
         score,
-        hp: Math.min(48, 1.16 + root * 0.42 + score * 0.055),
-        spawn: Math.min(2.45, 1.08 + root * 0.075 + score * 0.0045),
+        // HPの上限を200に引き上げ、指数的な成長で高スコアにもスケール
+        hp: Math.min(200, 1.16 + Math.pow(score, 0.8) * 0.28 + score * 0.06),
+        // スポーン頻度の上限を3.2に引き上げ
+        spawn: Math.min(3.2, 1.08 + root * 0.09 + score * 0.005),
+        // アップグレードが増えるほど敵が速くなる（最大2.2倍）
+        speed: Math.min(2.2, 1.0 + Math.pow(Math.max(0, score - 15), 0.55) * 0.065),
         damage: 1,
-        speed: 1,
-        boss: Math.min(6.5, 0.72 + root * 0.08 + score * 0.015)
+        boss: Math.min(10, 0.72 + root * 0.1 + score * 0.018)
       };
     }
     function threatText(g = game) {
@@ -1621,7 +1626,8 @@
 
     function gainIdleCoin(dt) {
       const g = game, p = g.player;
-      g.idleCoin += safeNumber(dt * (1.35 + g.t / 120 + g.stage.n * 0.04) * p.coinMult, 0);
+      // 序盤でも早めにアップグレードを買えるよう基本収入を増やす
+      g.idleCoin += safeNumber(dt * (2.8 + g.t / 80 + g.stage.n * 0.06) * p.coinMult, 0);
       if (!Number.isFinite(g.idleCoin)) g.idleCoin = MAX_MONEY;
       if (g.idleCoin >= 1) {
         const coins = clampMoney(Math.min(g.idleCoin, 1e18));
@@ -1700,7 +1706,7 @@
       const damageScale = Math.max(0.55, Math.sqrt(stageScale)) * (1.02 + Math.min(1.6, game.stage.n * 0.04)) * pressure.damage;
       game.enemies.push({
         type, lane, x, y, r: def.radius, hp: def.hp * scale, maxHp: def.hp * scale,
-        speed: def.speed * 1.08, damage: def.damage * damageScale,
+        speed: def.speed * 1.08 * pressure.speed, damage: def.damage * damageScale,
         xp: def.xp, coin: def.coin, burn: 0, poisonTick: 0, hit: 0
       });
     }
